@@ -1,12 +1,13 @@
-import re
+import typing as t
 import urllib.parse as up
+import re
 
 
 class QsParser:
     _args: dict[str, str] = None
-    _max_depth: int = -1
+    _max_depth: int = 5
 
-    def __init__(self, args: dict[str, str], max_depth: int = -1) -> None:
+    def __init__(self, args: dict[str, str], max_depth: int = 5) -> None:
         """
         Parser initialisation. Performs syntax validation.
         """
@@ -14,8 +15,15 @@ class QsParser:
         for k, v in args.items():
             self._parse_arg(k, v)
 
+    @property
+    def args(self) -> dict[str, str]:
+        """
+        Returns parsed arguments.
+        """
+        return self._args
+
     @classmethod
-    def from_url(cls, url: str, separator: str = '&', max_depth: int = -1) -> 'QsParser':
+    def from_url(cls, url: str, separator: str = '&', max_depth: int = 5) -> 'QsParser':
         """
         Creates a parser from a url.
         """
@@ -68,7 +76,7 @@ class QsParser:
         return incoming
 
     @staticmethod
-    def _add_nested(keys: list, v: str, incoming: dict = None, depth: int = -1) -> dict:
+    def _add_nested(keys: list, v: str, incoming: dict = None, depth: int = 5) -> dict:
         """
         Recursive function to add url param as item into nested dict.
         """
