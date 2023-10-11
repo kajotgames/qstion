@@ -1,5 +1,7 @@
 from flask_restx import Namespace, fields, Model
 import typing as t
+if t.TYPE_CHECKING:
+    from .loader import QueryFilterFactory
 
 GenericField = t.Union[
     fields.Raw,
@@ -88,3 +90,25 @@ class OutputModel:
             field_name: field_value for field_name, field_value in list(model.items())
         }
         return cls.from_mixed_dict(model.name, items, sortable, filterable)
+
+    def validate(self, filters: dict, builder_class: type['QueryFilterFactory']) -> None:
+        for key in filters.keys():
+            if key in self.fields: 
+                if not self.fields[key]._filterable:
+                    raise ValueError(f"Filtering by {key} is not allowed")
+            else: 
+                self.validate_keyword(key, filters[key], builder_class)
+            
+    def validate_keyword(self, builder_class: type['QueryFilterFactory'], keyword: str, val: str | list[str]) -> None:
+        if keyword not in builder_class.KWARGS:
+            raise ValueError(f"Keyword {keyword} is not known")
+        if isinstance(val, str):
+            val = [val]
+        for v in val:
+            _ , col = builder_class.parse_sort_item(v)
+            if col not in self.fields:
+                raise ValueError(f"Column {col} is not known")
+            if not self.fields[col]._sortable:
+                raise ValueError(f"Sorting by {col} is not allowed")
+        
+            

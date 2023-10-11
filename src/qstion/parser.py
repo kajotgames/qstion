@@ -7,6 +7,7 @@ class QsParser:
     _args: dict[str, str] = None
     _max_depth: int = 5
 
+    # maybe use classic up.parse_qs instead of this class
     def __init__(self, args: dict[str, str], max_depth: int = 5) -> None:
         """
         Parser initialisation. Performs syntax validation.
