@@ -24,7 +24,7 @@ def parse(
     """
     Parses a url into a dict.
     """
-    return parser.QsParser.from_url(url, separator, max_depth).args()
+    return parser.QsParser.parse(url, separator, max_depth).args()
 
 
 def build(

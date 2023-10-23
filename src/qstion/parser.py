@@ -2,19 +2,60 @@ import typing as t
 import urllib.parse as up
 import re
 
+t_Delimiter = t.Union[str, t.Pattern[str]]
 
 class QsParser:
-    _args: dict[str, str] = None
-    _max_depth: int = 5
+    _args: dict = None
+    _depth: int = 5
+    _parameter_limit: int = 1000
+    _allow_dots: bool = False
+    _allow_sparse: bool = False
+    _array_limit: int = 20
+    _parse_arrays: bool = False
+    _comma: bool = False
 
     # maybe use classic up.parse_qs instead of this class
-    def __init__(self, args: dict[str, str], max_depth: int = 5) -> None:
+    def __init__(
+            self, 
+            args: list[str],
+            depth: int,
+            parameter_limit: int,
+            allow_dots: bool,
+            allow_sparse: bool,
+            array_limit: int,
+            parse_arrays: bool,
+            comma: bool,
+            ):
         """
-        Parser initialisation. Performs syntax validation.
+        Args:
+            args (list): list of arguments to parse
+            depth (int): max depth of nested objects
+            - e.g. depth=1 : a[b]=c -> {'a': {'b': 'c'}}
+            - depth=1 : a[b][c]=d -> {'a': { '['b']['c']' : 'd'}}
+            parameter_limit (int): max number of parameters to parse (in keyword count)
+            allow_dots (bool): allow dot notation
+            - e.g. a.b=c -> {'a': {'b': 'c'}}
+            allow_sparse (bool): allow sparse arrays
+            - e.g. a[1]=b&a[5]=c -> {'a': [,'b',,'c']}
+            array_limit (int): max number of elements in array
+            if limit is reached, array is converted to object
+            parse_arrays (bool): parse array values as or keep object notation
+            comma (bool): allow comma separated values
+            - e.g. a=b,c -> {'a': ['b', 'c']}
         """
-        self._max_depth = max_depth
-        for k, v in args.items():
-            self._parse_arg(k, v)
+        self._args = {}
+        self._max_depth = depth
+        self._parameter_limit = parameter_limit
+        self._allow_dots = allow_dots
+        self._allow_sparse = allow_sparse
+        self._array_limit = array_limit
+        self._parse_arrays = parse_arrays
+        self._comma = comma
+        for arg in args:
+            pass
+
+
+
 
     @property
     def args(self) -> dict[str, str]:
@@ -23,25 +64,52 @@ class QsParser:
         """
         return self._args
 
+    # Todo : according to qs in npm, delimiter can be a regex -> remove default value
+    # todo : allow dot notation
+    # TODO: parsing of array notation : a[]=b&a[]=c -> {'a': ['b', 'c']}
+    # a[1]=c&a[0]=b -> {'a': ['b', 'c']}
+    # -> allow sparse arrays option
+    # -> empty string as value option
+    # -> array limit option (max number of elements in array, converting to object if limit is reached)
+    # -> parse array option (parse array values as numbers or booleans)
+    # - mixing notation will result in object notation
+    # comma option for array notation
     @classmethod
-    def from_url(cls, url: str, separator: str = '&', max_depth: int = 5) -> 'QsParser':
+    def parse(
+        cls, 
+        url: str, 
+        delimiter: t_Delimiter = '&', 
+        depth: int = 5, 
+        parameter_limit: int = 1000,
+        allow_dots: bool = False,
+        allow_sparse: bool = False,
+        array_limit: int = 20,
+        parse_arrays: bool = False,
+        comma: bool = False,
+        ) -> dict:
         """
         Creates a parser from a url.
         """
-        args = {}
+        args = []
         parsed_url = up.urlparse(url)
-        query_args = parsed_url.query.split(separator)
+        query_args = re.split(delimiter, parsed_url.query, maxsplit=parameter_limit)
         for arg in query_args:
-            args.update(cls._parse_arg_name(arg))
-        return cls(args, max_depth=max_depth)
+            args.append(cls._unq(arg))
+        return 
 
     @staticmethod
-    def _parse_arg_name(arg: str) -> str:
+    def _unq(arg: str) -> str:
         """
-        Split argument into key and value. returns a dict (url decoded)
+        Unquotes a string (removes url encoding).
+
+        Args:
+            arg (str): string to unquote
+
+        Returns:
+            str: unquoted string
         """
         arg_key, arg_val = arg.split('=')
-        return {up.unquote(arg_key): up.unquote(arg_val)}
+        return f'{up.unquote(arg_key)}={up.unquote(arg_val)}'
 
     def _parse_arg(self, k: str, v: str) -> None:
         """
@@ -100,3 +168,8 @@ class QsParser:
         if res := re.match(r'^(\w+)(\[\w+\])*$', k):
             nested = re.findall(r'\[(\w+)\]', k)
             return [res.group(1)] + nested
+
+
+if __name__ == '__main__':
+    url = 'http://localhost:5500/students?name[in]=richard&name[in]=eduardo'
+    print(QsParser.parse(url))
