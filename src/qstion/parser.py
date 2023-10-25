@@ -35,7 +35,7 @@ class ArrayParse:
             res = cls.process_notation(notation[1:], val)
             if not isinstance(res, dict):
                 return {None: res}
-            if not all(isinstance(x, int) for x in res.keys()):
+            if not all(isinstance(x, (int, type(None))) for x in res.keys()):
                 # initialization of array without index - set index None to be handled by parser
                 return {None: res}
             return res
@@ -297,5 +297,5 @@ class QsParser:
 
 
 if __name__ == '__main__':
-    url = 'http://localhost:5000/?a[1][0]=b&a[1][][b]=c'
+    url = 'http://localhost:5000/?a[][]=b&a[][]=c'
     print(QsParser.parse(url, parse_arrays=True))
