@@ -3,72 +3,99 @@ import urllib.parse as up
 import re
 
 
-
 t_Delimiter = t.Union[str, t.Pattern[str]]
-
-class ArrayItem:
-    _index: int | None = None
-    _value: t.Any
-
-    def __init__(self, idx, val) -> None:
-        self._index = idx
-        self._value = val
-
-    @property
-    def index(self) -> int | None:
-        return self._index
-    
-    @index.setter
-    def index(self, idx: int) -> None:
-        self._index = idx
-
-    @property
-    def value(self) -> t.Any:
-        return self._value
-    
-    @value.setter
-    def value(self, val: t.Any) -> None:
-        self._value = val
-
-    def __repr__(self) -> str:
-        return str(self._value)
-    
 
 
 class ArrayParse:
+    _depth: int = 5
     _limit: int = 20
 
     @classmethod
-    def process(cls, notation: list, array: list[ArrayItem], max_limit: int = 20) -> list:
+    def process(cls, notation: list, val: str, depth: int = 5, max_limit: int = 20) -> list:
         """
         Performs a syntax check on the key. works as state machine.
         """
         cls._limit = max_limit
-        return cls.process_notation(notation, array)
+        cls._depth = depth
+        return cls.process_notation(notation, val)
 
-    @classmethod 
-    def process_notation(cls, notation: list[str], val: t.Any) -> ArrayItem:
+    @classmethod
+    def process_notation(cls, notation: list[str], val: t.Any) -> dict:
         """
         Parses array notation recursively.
         """
         if not notation:
-            return val 
-        current = notation[0]        
+            return val
+        current = notation[0]
         if current.isdigit():
             if int(current) > cls._limit:
                 raise IndexError('Array limit reached')
-            return [ArrayItem(int(current), cls.process_notation(notation[1:], val))]
+            return {int(current): cls.process_notation(notation[1:], val)}
         elif current == '':
-            data = cls.process_notation(notation[1:], val)
-            if not isinstance(data, list):
-                data = [ArrayItem(None, data)]
-            return data
+            res = cls.process_notation(notation[1:], val)
+            if not isinstance(res, dict):
+                return {None: res}
+            if not all(isinstance(x, int) for x in res.keys()):
+                # initialization of array without index - set index None to be handled by parser
+                return {None: res}
+            return res
         else:
             return {current: cls.process_notation(notation[1:], val)}
-            
+
+
+class LHSParse:
+    _depth: int = 5
+    _dots: bool = False
+    _allow_empty: bool = False
+
+    @classmethod
+    def process(
+        cls,
+        notation: list,
+        val: str,
+        depth: int = 5,
+        allow_empty: bool = False,
+        allow_dots: bool = False
+    ) -> dict:
+        """
+        Parses left hand side notation recursively.
+        """
+        cls._depth = depth
+        cls._allow_empty = allow_empty
+        cls._dots = allow_dots
+        return cls.process_notation(notation, val)
+
+    @classmethod
+    def process_notation(cls, notation: list[str], val: t.Any) -> dict:
+        """
+        Parses left hand side notation recursively.
+        """
+        if not notation:
+            return val
+        current = notation[0]
+        if current == '' and not cls._allow_empty:
+            raise ValueError('Empty key not allowed')
+        if cls._depth <= 0:
+            # join current and rest of notation
+            current_key = cls._max_depth_key(notation)
+            return {current_key: val}
+        cls._depth -= 1
+        return {current: cls.process_notation(notation[1:], val)}
+
+    @classmethod
+    def _max_depth_key(cls, notation: list[str]) -> str:
+        """
+        Returns a key for max depth reached.
+        """
+        if len(notation) == 1:
+            return notation[0]
+        if cls._dots:
+            return f'{".".join(notation)}'
+        return f'[{"][".join(notation)}]'
+
 
 class QsParser:
-    _args: dict[str|int, str | int | dict ] = None
+    _args: dict[str | int, str | int | dict] = None
     _depth: int = 5
     _parameter_limit: int = 1000
     _allow_dots: bool = False
@@ -78,9 +105,8 @@ class QsParser:
     _allow_empty: bool = False
     _comma: bool = False
 
-    # maybe use classic up.parse_qs instead of this class
     def __init__(
-            self, 
+            self,
             args: list[str],
             depth: int,
             parameter_limit: int,
@@ -90,7 +116,7 @@ class QsParser:
             parse_arrays: bool,
             allow_empty: bool,
             comma: bool,
-            ):
+    ):
         """
         Args:
             args (list): list of arguments to parse
@@ -118,8 +144,9 @@ class QsParser:
         self._allow_empty = allow_empty
         self._comma = comma
         for arg in args:
+            parse_func = self._parse_array if self._parse_arrays else self._parse_lhs
             k, v = arg.split('=')
-            self._parse_arg(k, v)
+            parse_func(k, v)
 
     @property
     def args(self) -> dict[str, str]:
@@ -130,10 +157,10 @@ class QsParser:
 
     @classmethod
     def parse(
-        cls, 
-        url: str, 
-        delimiter: t_Delimiter = '&', 
-        depth: int = 5, 
+        cls,
+        url: str,
+        delimiter: t_Delimiter = '&',
+        depth: int = 5,
         parameter_limit: int = 1000,
         allow_dots: bool = False,
         allow_sparse: bool = False,
@@ -141,7 +168,7 @@ class QsParser:
         parse_arrays: bool = False,
         allow_empty: bool = False,
         comma: bool = False,
-        ) -> dict:
+    ) -> dict:
         """
         Creates a parser from a url.
         """
@@ -166,28 +193,7 @@ class QsParser:
         arg_key, arg_val = arg.split('=')
         return f'{up.unquote(arg_key)}={up.unquote(arg_val)}'
 
-    def _parse_arg(self, k: str, v: str) -> None:
-        """
-        Parses a single argument into a nested dict.
-        """
-        self._parse_array(k, v)
-        
-
-    def _parse_key(self, k: str) -> list:
-        """
-        Parses key into a list of nested keys.
-        """
-        # TODO add depth limit
-        # TODO handle dot notation
-        pass
-
-    def _parse_dots(self, k: str) -> list | None:
-        """
-        Parses key with dot notation into a list of nested keys.
-        """
-        pass
-
-    def _parse_array(self, k: str, v: str) -> bool:
+    def _parse_array(self, k: str, v: str):
         """
         Parses key with array notation into a list of nested keys.
         """
@@ -196,90 +202,100 @@ class QsParser:
         match = re.match(r'(\w+)(\[(.*)\])+', k)
         key = match.group(1)
         if not match:
-            return False
+            self._parse_arrays = False
         array_notation = re.findall(r'\[(.*?)\]', k)
-        if not array_notation:
-            return False
-        if not re.match(r'\d*', array_notation[0]):
-            return False
-        try:
-            array = ArrayParse.process(array_notation, v)
-            if key not in self._args:
-                self._args[key] = array
-            else:
-                QsParser._update_arg(self._args[key], array)
-        except IndexError:
-            return False    
+        if re.match(r'[^\d]+', array_notation[0] if array_notation else ''):
+            self._parse_arrays = False
+        result, self._parse_arrays = self._set_index(self.args.get(key, {}), ArrayParse.process(array_notation, v))
+        if key not in self._args:
+            self._args[key] = result
+        else:
+            self._args[key] = self._update_arg(self._args[key], result)
+        # post insertion check to verify array notation
 
     @staticmethod
-    def _handle_type(arg: t.Any, val: t.Any) -> t.Any:
+    def _set_index(current: dict, incoming: dict) -> tuple[dict, bool]:
+        """
+        Sets index from None if unknown index is present
+        also signals when object is no longer array
+        """
+        is_array = True
+        if not current:
+            max_index = -1
+        try:
+            max_index = max([int(key) for key in current] + [-1])
+        except ValueError:
+            # found non-numerical key
+            max_index = max([key for key in current if key.isdigit()] + [-1])
+            is_array = False
+        if None in incoming:
+            incoming[max_index+1] = incoming.pop(None)
+        return incoming, is_array
+    
+    def _parse_lhs(self, k: str, v: str) -> bool:
+        """
+        Parses key with brackets notation into a list of nested keys.
+        """
+        pattern = r'(\w+)(\[(.*)\])*' if not self._allow_empty else r'(\w*)(\[(.*?)\])*'
+        match = re.match(pattern, k)
+        if not match:
+            return False
+        notation = re.findall(r'\[(.*?)\]', k)
+        key = match.group(1)
+        data = LHSParse.process(
+            notation, v, depth=self._max_depth, allow_empty=self._allow_empty)
+        try:
+            if key not in self._args:
+                self._args[key] = data
+            else:
+                self._args[key] = self._update_arg(self._args[key], data)
+        except TypeError:
+            return False
+        return True
+
+    @staticmethod
+    def _process_types(arg: t.Any, val: t.Any) -> t.Any:
         """
         Handles type mismatch between arg and val.
         """
-        if isinstance(arg, str) and isinstance(val, dict):
-            # special case :
-            # {b : c} being updated with {b : {d : e}}
-            # -> c becomes {c : True}
-            arg = {arg: True}
-        # other cases must match
-        if type(arg) != type(val):
-            raise TypeError(f'Cannot update {type(arg)} with {type(val)}')
-        return arg
-    
-    # TODO incomplete
-    @staticmethod
-    def _update_arg(arg: t.Any, val: t.Any) -> None:
+        # need to map typing to following:
+        # arg: str and val: dict -> arg: {arg: True}
+        # arg: dict and val: str -> val: {val: True}
+        # arg: list and val: dict -> arg: {str(arg): True}
+        # arg: dict and val: list -> val: {str(val): True}
+        # arg: list and val: str -> val: [val]
+        # arg: str and val: list -> arg: [arg]
+        combination_map = {
+            (str, dict): lambda x, y: ({x: True}, y),
+            (dict, str): lambda x, y: (x, {y: True}),
+            (list, dict): lambda x, y: ({str(x): True}, y),
+            (dict, list): lambda x, y: (x, {str(y): True}),
+            (list, str): lambda x, y: (x, [y]),
+            (str, list): lambda x, y: ([x], y),
+        }
+        return combination_map.get((type(arg), type(val)), lambda x, y: (x, y))(arg, val)
+
+    def _update_arg(self ,arg: t.Any, val: t.Any) -> t.Union[dict, list]:
         """
         Updates an existing argument recursively.
         This method is neccesarly in case of using multiple arguments with the same key nesting.
         """
-        # TODO type mismatch handling not included -> types must match except this case
-        arg = QsParser._handle_type(arg, val)
-        if isinstance(arg, dict):
-            for k, v in v.items():
+        arg, val = QsParser._process_types(arg, val)
+        if isinstance(arg, str):
+            arg = [arg, val]
+        elif isinstance(arg, dict):
+            if all([isinstance(x, int) for x in arg.keys()]) and self._parse_arrays:
+                val, self._parse_arrays = self._set_index(arg, val)
+            for k, v in val.items():
                 if k in arg:
-                    QsParser._update_arg(arg[k], v)
+                    arg[k] = self._update_arg(arg[k], v)
                 else:
                     arg[k] = v
-        elif isinstance(arg, list):
-            for item in val:
-                if item.index is None:
-                    item.index = arg[-1].index + 1 if arg else 0
-                    arg.append(item)
-                else:
-                    # if item index is already in list, update it
-                    # otherwise append it
-                    if item.index in [i.index for i in arg]:
-                        for array_item in arg:
-                            if array_item.index == item.index:
-                                QsParser._update_arg(array_item.value, item.value)
-                    else:
-                        arg.append(item)
-                    QsParser._sort_array(arg)
         else:
-            raise TypeError(f'Cannot update {type(arg)} with {type(val)}')
+            arg.extend(val)
+        return arg
 
-    @staticmethod
-    def _sort_array(array: list[ArrayItem]) -> None:
-        """
-        Sorts array by index.
-        """
-        array.sort(key=lambda x: x.index)      
-
-
-    def _conv_to_non_array(self) -> None:
-        """
-        Converts current args to non-array notation.
-        """
-        pass
-
-    def _parse_brackets(self, k: str) -> list | None:
-        """
-        Parses key with brackets notation into a list of nested keys.
-        """
-        pass
 
 if __name__ == '__main__':
-    url = 'http://localhost:5000/?a[][1][][1]=b&a[][1][][0]=c&a[0][b]=c'
+    url = 'http://localhost:5000/?a[1][0]=b&a[1][][b]=c'
     print(QsParser.parse(url, parse_arrays=True))
-
