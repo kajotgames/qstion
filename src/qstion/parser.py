@@ -1,6 +1,23 @@
 import typing as t
 import urllib.parse as up
+from html import unescape as unescape_html
 import re
+
+
+class Unparsable(Exception):
+    pass
+
+
+class ArrayLimitReached(Exception):
+    pass
+
+
+class UnbalancedBrackets(Exception):
+    pass
+
+
+class EmptyKey(Exception):
+    pass
 
 
 t_Delimiter = t.Union[str, t.Pattern[str]]
@@ -29,7 +46,7 @@ class ArrayParse:
         current = notation[0]
         if current.isdigit():
             if int(current) > cls._limit:
-                raise IndexError('Array limit reached')
+                raise ArrayLimitReached('Array limit reached')
             return {int(current): cls.process_notation(notation[1:], val)}
         elif current == '':
             res = cls.process_notation(notation[1:], val)
@@ -74,7 +91,7 @@ class LHSParse:
             return val
         current = notation[0]
         if current == '' and not cls._allow_empty:
-            raise ValueError('Empty key not allowed')
+            raise EmptyKey('Empty key not allowed')
         if cls._depth <= 0:
             # join current and rest of notation
             current_key = cls._max_depth_key(notation)
@@ -146,6 +163,9 @@ class QsParser:
         for arg in args:
             parse_func = self._parse_array if self._parse_arrays else self._parse_lhs
             k, v = arg.split('=')
+            if self._comma:
+                v = re.split(',', v)
+                v = str(v[0]) if len(v) == 1 else v
             parse_func(k, v)
 
     @property
@@ -156,7 +176,7 @@ class QsParser:
         return self._args
 
     @classmethod
-    def parse(
+    def from_url(
         cls,
         url: str,
         delimiter: t_Delimiter = '&',
@@ -167,20 +187,63 @@ class QsParser:
         array_limit: int = 20,
         parse_arrays: bool = False,
         allow_empty: bool = False,
+        charset: str = 'utf-8',
+        interpret_numeric_entities: bool = False,
+        comma: bool = False,
+    ) -> dict:
+        """
+        Creates a parser from a url.
+        """
+        qs = up.urlparse(url).query
+        return cls.parse(
+            qs,
+            delimiter,
+            depth,
+            parameter_limit,
+            allow_dots,
+            allow_sparse,
+            array_limit,
+            parse_arrays,
+            allow_empty,
+            charset,
+            interpret_numeric_entities,
+            comma,
+        )
+
+    @classmethod
+    def parse(
+        cls,
+        qs: str,
+        delimiter: t_Delimiter = '&',
+        depth: int = 5,
+        parameter_limit: int = 1000,
+        allow_dots: bool = False,
+        allow_sparse: bool = False,
+        array_limit: int = 20,
+        parse_arrays: bool = False,
+        allow_empty: bool = False,
+        charset: str = 'utf-8',
+        interpret_numeric_entities: bool = False,
         comma: bool = False,
     ) -> dict:
         """
         Creates a parser from a url.
         """
         args = []
-        parsed_url = up.urlparse(url)
-        query_args = re.split(delimiter, parsed_url.query)
-        for arg in query_args:
-            args.append(cls._unq(arg))
-        return cls(args, depth, parameter_limit, allow_dots, allow_sparse, array_limit, parse_arrays, allow_empty, comma).args
+        try:
+            query_args = re.split(delimiter, qs)
+            for arg in query_args:
+                args.append(cls._unq(arg, charset, interpret_numeric_entities))
+            return cls(args, depth, parameter_limit, allow_dots, allow_sparse, array_limit, parse_arrays, allow_empty, comma).args
+        except (Unparsable, UnbalancedBrackets):
+            return up.parse_qs(
+                qs,
+                keep_blank_values=allow_empty,
+                max_num_fields=parameter_limit,
+                separator=delimiter)
 
     @staticmethod
-    def _unq(arg: str) -> str:
+    def _unq(arg: str, charset: str = 'utf-8', interpret_numeric_entities: bool = False) -> str:
         """
         Unquotes a string (removes url encoding).
 
@@ -190,28 +253,121 @@ class QsParser:
         Returns:
             str: unquoted string
         """
-        arg_key, arg_val = arg.split('=')
-        return f'{up.unquote(arg_key)}={up.unquote(arg_val)}'
+        try:
+            arg_key, arg_val = arg.split('=')
+        except ValueError:
+            raise Unparsable('Unable to parse key')
+        if interpret_numeric_entities:
+            return f'{unescape_html(up.unquote(arg_key, charset))}={unescape_html(up.unquote(arg_val, charset))}'
+        return f'{up.unquote(arg_key, charset)}={up.unquote(arg_val, charset)}'
 
-    def _parse_array(self, k: str, v: str):
+    def _split_key(self, k: str) -> tuple[str, list[str]] | tuple[None, None]:
+        """
+        Splits key into a main key and a list of nested keys.
+        """
+        if self._parse_arrays:
+            QsParser._check_brackets(k)
+            match_pattern = r'(\w+)(\[(.*)\])+' if not self._allow_empty else r'(\w*)(\[(.*)\])+'
+            match = re.match(match_pattern, k)
+            notation = re.findall(r'\[(.*?)\]', k)
+            return (match.group(1), notation) if match else (None, None)
+        if self._allow_dots:
+            match = re.match(
+                r'(\w+)(\.\w+)+', k) if not self._allow_empty else re.match(r'(\w*)(\.(\w*))', k)
+            notation = re.findall(
+                r'\.(\w+)', k) if not self._allow_empty else re.findall(r'\.(\w*)', k)
+            if match:
+                return match.group(1), notation
+        QsParser._check_brackets(k)
+        match_pattern = r'^(\w+)(\[\w+\])*$' if not self._allow_empty else r'^(\w*)(\[\w*\])*$'
+        match = re.match(match_pattern, k)
+        notation = re.findall(
+            r'\[(\w+)\]', k) if not self._allow_empty else re.findall(r'\[(\w*)\]', k)
+        return (match.group(1), notation) if match else (None, None)
+
+    @staticmethod
+    def _check_brackets(k: str) -> None:
+        """
+        Checks if brackets are balanced.
+        """
+        brackets = [char for char in k if char in '[]']
+        # check if brackets are balanced
+        bracket_count = 0
+        for bracket in brackets:
+            if bracket == '[' and bracket_count > 0:
+                raise UnbalancedBrackets(
+                    'Using brackets as key is not allowed')
+            if bracket == ']' and bracket_count == 0:
+                raise UnbalancedBrackets('Unbalanced brackets')
+            bracket_count += 1 if bracket == '[' else -1
+        if bracket_count != 0:
+            raise UnbalancedBrackets('Unbalanced brackets')
+        if brackets and not k.endswith(']'):
+            raise Unparsable('Nesting notation broken')
+
+    def _parse_array(self, k: str, v: str | list) -> None:
         """
         Parses key with array notation into a list of nested keys.
         """
-        if not self._parse_arrays:
-            return False
-        match = re.match(r'(\w+)(\[(.*)\])+', k)
-        key = match.group(1)
-        if not match:
+        key, notation = self._split_key(k)
+        if key is None:
+            # continue as default lhs
             self._parse_arrays = False
-        array_notation = re.findall(r'\[(.*?)\]', k)
-        if re.match(r'[^\d]+', array_notation[0] if array_notation else ''):
+            self._args = QsParser.transform_to_object(self._args)
+            return self._parse_lhs(k, v)
+        if not notation or re.match(r'[^\d]+', notation[0]):
             self._parse_arrays = False
-        result, self._parse_arrays = self._set_index(self.args.get(key, {}), ArrayParse.process(array_notation, v))
+            self._args = QsParser.transform_to_object(self._args)
+            return self._parse_lhs(k, v)
+        try:
+            result, self._parse_arrays = self._set_index(
+                self.args.get(key, {}), ArrayParse.process(notation, v))
+            if any([key > self._array_limit for key in result.keys()]):
+                raise ArrayLimitReached('Array limit reached')
+        except ArrayLimitReached:
+            self._parse_arrays = False
+            self._args = QsParser.transform_to_object(self._args)
+            return self._parse_lhs(k, v)
         if key not in self._args:
+            if len(self._args) >= self._parameter_limit:
+                return
             self._args[key] = result
         else:
             self._args[key] = self._update_arg(self._args[key], result)
-        # post insertion check to verify array notation
+
+    def _parse_lhs(self, k: str, v: str | list) -> None:
+        """
+        Parses key with brackets notation into a list of nested keys.
+        """
+        key, notation = self._split_key(k)
+        if key is None:
+            raise Unparsable('Unable to parse key')
+        data = LHSParse.process(
+            notation, v, depth=self._max_depth, allow_empty=self._allow_empty)
+        if key not in self._args:
+            if len(self._args) >= self._parameter_limit:
+                return
+            self._args[key] = data
+        else:
+            self._args[key] = self._update_arg(self._args[key], data)
+
+    @staticmethod
+    def transform_to_object(arg: dict) -> dict:
+        """
+        Transforms array-like dictionary into object-like dictionary, recursively.
+        """
+        fixed = {}
+        for arg_key in arg:
+            replaced_key = arg_key
+            if isinstance(arg_key, int):
+                replaced_key = str(arg_key)
+                fixed[replaced_key] = arg[arg_key]
+            else:
+                fixed[replaced_key] = arg[arg_key]
+            if isinstance(arg[arg_key], dict):
+                fixed[replaced_key] = QsParser.transform_to_object(
+                    arg[arg_key])
+        return fixed
 
     @staticmethod
     def _set_index(current: dict, incoming: dict) -> tuple[dict, bool]:
@@ -226,32 +382,12 @@ class QsParser:
             max_index = max([int(key) for key in current] + [-1])
         except ValueError:
             # found non-numerical key
-            max_index = max([key for key in current if key.isdigit()] + [-1])
+            max_index = max(
+                [key for key in current if str(key).isdigit()] + [-1])
             is_array = False
         if None in incoming:
             incoming[max_index+1] = incoming.pop(None)
         return incoming, is_array
-    
-    def _parse_lhs(self, k: str, v: str) -> bool:
-        """
-        Parses key with brackets notation into a list of nested keys.
-        """
-        pattern = r'(\w+)(\[(.*)\])*' if not self._allow_empty else r'(\w*)(\[(.*?)\])*'
-        match = re.match(pattern, k)
-        if not match:
-            return False
-        notation = re.findall(r'\[(.*?)\]', k)
-        key = match.group(1)
-        data = LHSParse.process(
-            notation, v, depth=self._max_depth, allow_empty=self._allow_empty)
-        try:
-            if key not in self._args:
-                self._args[key] = data
-            else:
-                self._args[key] = self._update_arg(self._args[key], data)
-        except TypeError:
-            return False
-        return True
 
     @staticmethod
     def _process_types(arg: t.Any, val: t.Any) -> t.Any:
@@ -275,7 +411,7 @@ class QsParser:
         }
         return combination_map.get((type(arg), type(val)), lambda x, y: (x, y))(arg, val)
 
-    def _update_arg(self ,arg: t.Any, val: t.Any) -> t.Union[dict, list]:
+    def _update_arg(self, arg: t.Any, val: t.Any) -> t.Union[dict, list]:
         """
         Updates an existing argument recursively.
         This method is neccesarly in case of using multiple arguments with the same key nesting.
@@ -296,6 +432,29 @@ class QsParser:
         return arg
 
 
+def parse(data: str, from_url: bool = False, **kw):
+    """
+    Parses a string into a dictionary.
+
+    Args:
+        data (str): string to parse
+        from_url (bool): if True, parses url
+        **kw (dict): keyword arguments for QsParser
+
+    Returns:
+        dict: parsed data
+    """
+    if from_url:
+        return QsParser.from_url(data, **kw)
+    return QsParser.parse(data, **kw)
+
+# TODO implement
+
+
+def stringify(data: dict) -> str:
+    pass
+
+
 if __name__ == '__main__':
-    url = 'http://localhost:5000/?a[][]=b&a[][]=c'
-    print(QsParser.parse(url, parse_arrays=True))
+    res = parse('a[1]=b', parse_arrays=True, array_limit=0)
+    print(res)
