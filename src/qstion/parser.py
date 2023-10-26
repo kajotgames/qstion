@@ -3,6 +3,8 @@ import urllib.parse as up
 from html import unescape as unescape_html
 import re
 
+#TODO add docstrings
+
 
 class Unparsable(Exception):
     pass
@@ -167,6 +169,10 @@ class QsParser:
                 v = re.split(',', v)
                 v = str(v[0]) if len(v) == 1 else v
             parse_func(k, v)
+        # TODO process types:
+        # 'null' -> None
+        # boolean strings -> bool
+        # time, date, datetime, etc.
 
     @property
     def args(self) -> dict[str, str]:
@@ -394,13 +400,6 @@ class QsParser:
         """
         Handles type mismatch between arg and val.
         """
-        # need to map typing to following:
-        # arg: str and val: dict -> arg: {arg: True}
-        # arg: dict and val: str -> val: {val: True}
-        # arg: list and val: dict -> arg: {str(arg): True}
-        # arg: dict and val: list -> val: {str(val): True}
-        # arg: list and val: str -> val: [val]
-        # arg: str and val: list -> arg: [arg]
         combination_map = {
             (str, dict): lambda x, y: ({x: True}, y),
             (dict, str): lambda x, y: (x, {y: True}),
@@ -452,7 +451,7 @@ def parse(data: str, from_url: bool = False, **kw):
 
 
 def stringify(data: dict) -> str:
-    pass
+    raise NotImplementedError('Not implemented yet')
 
 
 if __name__ == '__main__':
