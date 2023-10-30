@@ -1,6 +1,8 @@
-import unittest
-from qstion import parser as qs
 
+import unittest
+import sys
+sys.path.append(".")
+import src.qstion as qs
 
 class ParserTest(unittest.TestCase):
 
@@ -81,7 +83,6 @@ class ParserTest(unittest.TestCase):
             {'a': '☺'})
 
     def test_advanced_parse_objects(self):
-
         # two separate nested objects
         self.assertDictEqual(
             qs.parse('a[b]=c&d[e]=f'),
@@ -128,7 +129,6 @@ class ParserTest(unittest.TestCase):
         # however, notation is still strictly checked so array notation is accepted
         # and array-like dictionaries should only contain integer keys (unless notation was broken and
         # notation is combined - with basic objects - in which case the notation is ignored)
-
         # basic
         self.assertDictEqual(
             qs.parse('a[]=b&a[]=c', parse_arrays=True),

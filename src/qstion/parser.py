@@ -2,25 +2,8 @@ import typing as t
 import urllib.parse as up
 from html import unescape as unescape_html
 import re
-
-#TODO add docstrings
-
-
-class Unparsable(Exception):
-    pass
-
-
-class ArrayLimitReached(Exception):
-    pass
-
-
-class UnbalancedBrackets(Exception):
-    pass
-
-
-class EmptyKey(Exception):
-    pass
-
+from .base import QS
+from . import errors as e
 
 t_Delimiter = t.Union[str, t.Pattern[str]]
 
@@ -30,9 +13,18 @@ class ArrayParse:
     _limit: int = 20
 
     @classmethod
-    def process(cls, notation: list, val: str, depth: int = 5, max_limit: int = 20) -> list:
+    def process(cls, notation: list, val: str, depth: int = 5, max_limit: int = 20) -> dict:
         """
-        Performs a syntax check on the key. works as state machine.
+        Parses array notation for single key-value pair.
+
+        Args:
+            notation (list): list of keys (in nested order)
+            val (str): value to assign to the last key
+            depth (int): max depth of nested objects
+            max_limit (int): max number of elements in array
+
+        Returns:
+            list: parsed item into dictionary
         """
         cls._limit = max_limit
         cls._depth = depth
@@ -42,13 +34,23 @@ class ArrayParse:
     def process_notation(cls, notation: list[str], val: t.Any) -> dict:
         """
         Parses array notation recursively.
+
+        Args:
+            notation (list): list of remaining keys (in nested order)
+            val (str): value to assign to the last key
+
+        Returns:
+            dict: parsed sub-dictionary
+
+        Raises:
+            ArrayLimitReached: if array limit is reached
         """
         if not notation:
             return val
         current = notation[0]
         if current.isdigit():
             if int(current) > cls._limit:
-                raise ArrayLimitReached('Array limit reached')
+                raise e.ArrayLimitReached('Array limit reached')
             return {int(current): cls.process_notation(notation[1:], val)}
         elif current == '':
             res = cls.process_notation(notation[1:], val)
@@ -77,7 +79,14 @@ class LHSParse:
         allow_dots: bool = False
     ) -> dict:
         """
-        Parses left hand side notation recursively.
+        Parses left hand side notation for single key-value pair.
+
+        Args:
+            notation (list): list of keys (in nested order)
+            val (str): value to assign to the last key
+            depth (int): max depth of nested objects
+            allow_empty (bool): allow empty keys
+            allow_dots (bool): allow dot notation
         """
         cls._depth = depth
         cls._allow_empty = allow_empty
@@ -88,12 +97,22 @@ class LHSParse:
     def process_notation(cls, notation: list[str], val: t.Any) -> dict:
         """
         Parses left hand side notation recursively.
+
+        Args:
+            notation (list): list of remaining keys (in nested order)
+            val (str): value to assign to the last key
+
+        Returns:
+            dict: parsed sub-dictionary
+
+        Raises:
+            EmptyKey: if empty key is found and not allowed
         """
         if not notation:
             return val
         current = notation[0]
         if current == '' and not cls._allow_empty:
-            raise EmptyKey('Empty key not allowed')
+            raise e.EmptyKey('Empty key not allowed')
         if cls._depth <= 0:
             # join current and rest of notation
             current_key = cls._max_depth_key(notation)
@@ -104,7 +123,13 @@ class LHSParse:
     @classmethod
     def _max_depth_key(cls, notation: list[str]) -> str:
         """
-        Returns a key for max depth reached.
+        Returns a key for max depth reached. 
+
+        Args:
+            notation (list): list of remaining keys (in nested order)
+
+        Returns:
+            str: key for max depth reached
         """
         if len(notation) == 1:
             return notation[0]
@@ -113,16 +138,8 @@ class LHSParse:
         return f'[{"][".join(notation)}]'
 
 
-class QsParser:
+class QsParser(QS):
     _args: dict[str | int, str | int | dict] = None
-    _depth: int = 5
-    _parameter_limit: int = 1000
-    _allow_dots: bool = False
-    _allow_sparse: bool = False
-    _array_limit: int = 20
-    _parse_arrays: bool = False
-    _allow_empty: bool = False
-    _comma: bool = False
 
     def __init__(
             self,
@@ -137,31 +154,19 @@ class QsParser:
             comma: bool,
     ):
         """
-        Args:
-            args (list): list of arguments to parse
-            depth (int): max depth of nested objects
-            - e.g. depth=1 : a[b]=c -> {'a': {'b': 'c'}}
-            - depth=1 : a[b][c]=d -> {'a': { '['b']['c']' : 'd'}}
-            parameter_limit (int): max number of parameters to parse (in keyword count)
-            allow_dots (bool): allow dot notation
-            - e.g. a.b=c -> {'a': {'b': 'c'}}
-            allow_sparse (bool): allow sparse arrays
-            - e.g. a[1]=b&a[5]=c -> {'a': [,'b',,'c']}
-            array_limit (int): max number of elements in array
-            if limit is reached, array is converted to object
-            parse_arrays (bool): parse array values as or keep object notation
-            comma (bool): allow comma separated values
-            - e.g. a=b,c -> {'a': ['b', 'c']}
+        Handler for parsing query string into JS-object-like dictionary.
         """
+        super().__init__(
+            depth,
+            parameter_limit,
+            allow_dots,
+            allow_sparse,
+            array_limit,
+            parse_arrays,
+            allow_empty,
+            comma,
+        )
         self._args = {}
-        self._max_depth = depth
-        self._parameter_limit = parameter_limit
-        self._allow_dots = allow_dots
-        self._allow_sparse = allow_sparse
-        self._array_limit = array_limit
-        self._parse_arrays = parse_arrays
-        self._allow_empty = allow_empty
-        self._comma = comma
         for arg in args:
             parse_func = self._parse_array if self._parse_arrays else self._parse_lhs
             k, v = arg.split('=')
@@ -169,10 +174,6 @@ class QsParser:
                 v = re.split(',', v)
                 v = str(v[0]) if len(v) == 1 else v
             parse_func(k, v)
-        # TODO process types:
-        # 'null' -> None
-        # boolean strings -> bool
-        # time, date, datetime, etc.
 
     @property
     def args(self) -> dict[str, str]:
@@ -199,6 +200,23 @@ class QsParser:
     ) -> dict:
         """
         Creates a parser from a url.
+
+        Args:
+            url (str): url to parse
+            delimiter (str): delimiter for query arguments
+            depth (int): max depth of nested objects
+            parameter_limit (int): max number of parameters to parse (in keyword count)
+            allow_dots (bool): allow dot notation
+            allow_sparse (bool): allow sparse arrays
+            array_limit (int): max number of elements in array
+            parse_arrays (bool): parse array values as or keep object notation
+            allow_empty (bool): allow empty keys
+            charset (str): charset for url encoding
+            interpret_numeric_entities (bool): interpret numeric entities
+            comma (bool): allow comma separated values
+
+        Returns:
+            dict: parsed data
         """
         qs = up.urlparse(url).query
         return cls.parse(
@@ -233,7 +251,24 @@ class QsParser:
         comma: bool = False,
     ) -> dict:
         """
-        Creates a parser from a url.
+        Parses url query string into JS-object-like dictionary.
+
+        Args:
+            qs (str): query string to parse
+            delimiter (str): delimiter for query arguments
+            depth (int): max depth of nested objects
+            parameter_limit (int): max number of parameters to parse (in keyword count)
+            allow_dots (bool): allow dot notation
+            allow_sparse (bool): allow sparse arrays
+            array_limit (int): max number of elements in array
+            parse_arrays (bool): parse array values as or keep object notation
+            allow_empty (bool): allow empty keys
+            charset (str): charset for url encoding
+            interpret_numeric_entities (bool): interpret numeric entities
+            comma (bool): allow comma separated values
+
+        Returns:
+            dict: parsed data
         """
         args = []
         try:
@@ -241,7 +276,7 @@ class QsParser:
             for arg in query_args:
                 args.append(cls._unq(arg, charset, interpret_numeric_entities))
             return cls(args, depth, parameter_limit, allow_dots, allow_sparse, array_limit, parse_arrays, allow_empty, comma).args
-        except (Unparsable, UnbalancedBrackets):
+        except (e.Unparsable, e.UnbalancedBrackets):
             return up.parse_qs(
                 qs,
                 keep_blank_values=allow_empty,
@@ -262,7 +297,7 @@ class QsParser:
         try:
             arg_key, arg_val = arg.split('=')
         except ValueError:
-            raise Unparsable('Unable to parse key')
+            raise e.Unparsable('Unable to parse key')
         if interpret_numeric_entities:
             return f'{unescape_html(up.unquote(arg_key, charset))}={unescape_html(up.unquote(arg_val, charset))}'
         return f'{up.unquote(arg_key, charset)}={up.unquote(arg_val, charset)}'
@@ -270,6 +305,12 @@ class QsParser:
     def _split_key(self, k: str) -> tuple[str, list[str]] | tuple[None, None]:
         """
         Splits key into a main key and a list of nested keys.
+
+        Args:
+            k (str): key to split
+
+        Returns:
+            tuple[str, list[str]]: main key and list of nested keys or None, None if key is not parsable with current settings
         """
         if self._parse_arrays:
             QsParser._check_brackets(k)
@@ -295,25 +336,36 @@ class QsParser:
     def _check_brackets(k: str) -> None:
         """
         Checks if brackets are balanced.
+
+        Args:
+            k (str): key to check
+
+        Raises:
+            UnbalancedBrackets: if brackets are unbalanced
+            Unparsable: if nesting notation is broken
         """
         brackets = [char for char in k if char in '[]']
         # check if brackets are balanced
         bracket_count = 0
         for bracket in brackets:
             if bracket == '[' and bracket_count > 0:
-                raise UnbalancedBrackets(
+                raise e.UnbalancedBrackets(
                     'Using brackets as key is not allowed')
             if bracket == ']' and bracket_count == 0:
-                raise UnbalancedBrackets('Unbalanced brackets')
+                raise e.UnbalancedBrackets('Unbalanced brackets')
             bracket_count += 1 if bracket == '[' else -1
         if bracket_count != 0:
-            raise UnbalancedBrackets('Unbalanced brackets')
+            raise e.UnbalancedBrackets('Unbalanced brackets')
         if brackets and not k.endswith(']'):
-            raise Unparsable('Nesting notation broken')
+            raise e.Unparsable('Nesting notation broken')
 
     def _parse_array(self, k: str, v: str | list) -> None:
         """
         Parses key with array notation into a list of nested keys.
+
+        Args:
+            k (str): key to parse
+            v (str): value to assign to the key
         """
         key, notation = self._split_key(k)
         if key is None:
@@ -329,8 +381,8 @@ class QsParser:
             result, self._parse_arrays = self._set_index(
                 self.args.get(key, {}), ArrayParse.process(notation, v))
             if any([key > self._array_limit for key in result.keys()]):
-                raise ArrayLimitReached('Array limit reached')
-        except ArrayLimitReached:
+                raise e.ArrayLimitReached('Array limit reached')
+        except e.ArrayLimitReached:
             self._parse_arrays = False
             self._args = QsParser.transform_to_object(self._args)
             return self._parse_lhs(k, v)
@@ -344,10 +396,14 @@ class QsParser:
     def _parse_lhs(self, k: str, v: str | list) -> None:
         """
         Parses key with brackets notation into a list of nested keys.
+
+        Args:
+            k (str): key to parse
+            v (str): value to assign to the key
         """
         key, notation = self._split_key(k)
         if key is None:
-            raise Unparsable('Unable to parse key')
+            raise e.Unparsable('Unable to parse key')
         data = LHSParse.process(
             notation, v, depth=self._max_depth, allow_empty=self._allow_empty)
         if key not in self._args:
@@ -361,6 +417,12 @@ class QsParser:
     def transform_to_object(arg: dict) -> dict:
         """
         Transforms array-like dictionary into object-like dictionary, recursively.
+
+        Args:
+            arg (dict): dictionary to transform
+
+        Returns:    
+            dict: transformed dictionary
         """
         fixed = {}
         for arg_key in arg:
@@ -378,8 +440,12 @@ class QsParser:
     @staticmethod
     def _set_index(current: dict, incoming: dict) -> tuple[dict, bool]:
         """
-        Sets index from None if unknown index is present
+        Sets index from None if unknown index is present.
         also signals when object is no longer array
+
+        Args:
+            current (dict): current dictionary
+            incoming (dict): incoming dictionary
         """
         is_array = True
         if not current:
@@ -396,9 +462,16 @@ class QsParser:
         return incoming, is_array
 
     @staticmethod
-    def _process_types(arg: t.Any, val: t.Any) -> t.Any:
+    def _process_types(arg: t.Any, val: t.Any) -> tuple[t.Any, t.Any]:
         """
         Handles type mismatch between arg and val.
+
+        Args:
+            arg (any): argument
+            val (any): value to assign to the argument
+
+        Returns:
+            tuple[any, any]: processed argument and value
         """
         combination_map = {
             (str, dict): lambda x, y: ({x: True}, y),
@@ -414,6 +487,13 @@ class QsParser:
         """
         Updates an existing argument recursively.
         This method is neccesarly in case of using multiple arguments with the same key nesting.
+
+        Args:
+            arg (any): argument
+            val (any): value to assign to the argument
+
+        Returns:
+            any: updated argument
         """
         arg, val = QsParser._process_types(arg, val)
         if isinstance(arg, str):
@@ -438,7 +518,7 @@ def parse(data: str, from_url: bool = False, **kw):
     Args:
         data (str): string to parse
         from_url (bool): if True, parses url
-        **kw (dict): keyword arguments for QsParser
+        **kw: keyword arguments for QsParser
 
     Returns:
         dict: parsed data
@@ -446,14 +526,3 @@ def parse(data: str, from_url: bool = False, **kw):
     if from_url:
         return QsParser.from_url(data, **kw)
     return QsParser.parse(data, **kw)
-
-# TODO implement
-
-
-def stringify(data: dict) -> str:
-    raise NotImplementedError('Not implemented yet')
-
-
-if __name__ == '__main__':
-    res = parse('a[1]=b', parse_arrays=True, array_limit=0)
-    print(res)
