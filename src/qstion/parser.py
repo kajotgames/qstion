@@ -138,31 +138,7 @@ class LHSParse:
 
 
 class QsParser(QS):
-    def __init__(
-            self,
-            args: list[str],
-            depth: int,
-            parameter_limit: int,
-            allow_dots: bool,
-            allow_sparse: bool,
-            array_limit: int,
-            parse_arrays: bool,
-            allow_empty: bool,
-            comma: bool,
-    ):
-        """
-        Handler for parsing query string into JS-object-like dictionary.
-        """
-        super().__init__(
-            depth,
-            parameter_limit,
-            allow_dots,
-            allow_sparse,
-            array_limit,
-            parse_arrays,
-            allow_empty,
-            comma,
-        )
+    def parse(self, args: list[str]):
         for arg in args:
             parse_func = self._parse_array if self._parse_arrays else self._parse_lhs
             k, v = arg.split('=')
@@ -179,6 +155,33 @@ class QsParser(QS):
         return {
             k.key: k.serialize() for k in self._qs_tree.values()
         }
+
+    @staticmethod
+    def _check_brackets(k: str) -> None:
+        """
+        Checks if brackets are balanced.
+
+        Args:
+            k (str): key to check
+
+        Raises:
+            UnbalancedBrackets: if brackets are unbalanced
+            Unparsable: if nesting notation is broken
+        """
+        brackets = [char for char in k if char in '[]']
+        # check if brackets are balanced
+        bracket_count = 0
+        for bracket in brackets:
+            if bracket == '[' and bracket_count > 0:
+                raise UnbalancedBrackets(
+                    'Using brackets as key is not allowed')
+            if bracket == ']' and bracket_count == 0:
+                raise UnbalancedBrackets('Unbalanced brackets')
+            bracket_count += 1 if bracket == '[' else -1
+        if bracket_count != 0:
+            raise UnbalancedBrackets('Unbalanced brackets')
+        if brackets and not k.endswith(']'):
+            raise Unparsable('Nesting notation broken')
 
     @staticmethod
     def _unq(arg: str, charset: str = 'utf-8', interpret_numeric_entities: bool = False) -> str:
@@ -198,6 +201,59 @@ class QsParser(QS):
         if interpret_numeric_entities:
             return f'{unescape_html(up.unquote(arg_key, charset))}={unescape_html(up.unquote(arg_val, charset))}'
         return f'{up.unquote(arg_key, charset)}={up.unquote(arg_val, charset)}'
+
+    def _parse_array(self, k: str, v: str | list) -> None:
+        """
+        Parses key with array notation into a list of nested keys.
+
+        Args:
+            k (str): key to parse
+            v (str): value to assign to the key
+        """
+        notation = self._split_key(k)
+        if notation is None:
+            # continue as default lhs
+            self._parse_arrays = False
+            self._to_obj()
+            return self._parse_lhs(k, v)
+        if re.match(r'[^\d]+', notation[1]):
+            self._parse_arrays = False
+            self._to_obj()
+            return self._parse_lhs(k, v)
+        try:
+            item = ArrayParse.process(notation, v)
+            item.set_index(self._qs_tree.get(item.key, None),
+                           array_limit=self._array_limit)
+        except ArrayLimitReached:
+            self._parse_arrays = False
+            self._to_obj()
+            return self._parse_lhs(k, v)
+        if item.key not in self._qs_tree:
+            if len(self._qs_tree) >= self._parameter_limit:
+                return
+            self._qs_tree[item.key] = item
+        else:
+            self._qs_tree[item.key].update(item)
+
+    def _parse_lhs(self, k: str, v: str | list) -> None:
+        """
+        Parses key with brackets notation into a list of nested keys.
+
+        Args:
+            k (str): key to parse
+            v (str): value to assign to the key
+        """
+        notation = self._split_key(k)
+        if notation is None:
+            raise Unparsable('Unable to parse key')
+        data = LHSParse.process(
+            notation, v, depth=self._max_depth, allow_empty=self._allow_empty)
+        if data.key not in self._qs_tree:
+            if len(self._qs_tree) >= self._parameter_limit:
+                return
+            self._qs_tree[data.key] = data
+        else:
+            self._qs_tree[data.key].update(data)
 
     def _split_key(self, k: str) -> list[str] | None:
         """
@@ -229,87 +285,7 @@ class QsParser(QS):
             r'\[(\w+)\]', k) if not self._allow_empty else re.findall(r'\[(\w*)\]', k)
         return [match.group(1)] + notation if match else None
 
-    @staticmethod
-    def _check_brackets(k: str) -> None:
-        """
-        Checks if brackets are balanced.
-
-        Args:
-            k (str): key to check
-
-        Raises:
-            UnbalancedBrackets: if brackets are unbalanced
-            Unparsable: if nesting notation is broken
-        """
-        brackets = [char for char in k if char in '[]']
-        # check if brackets are balanced
-        bracket_count = 0
-        for bracket in brackets:
-            if bracket == '[' and bracket_count > 0:
-                raise UnbalancedBrackets(
-                    'Using brackets as key is not allowed')
-            if bracket == ']' and bracket_count == 0:
-                raise UnbalancedBrackets('Unbalanced brackets')
-            bracket_count += 1 if bracket == '[' else -1
-        if bracket_count != 0:
-            raise UnbalancedBrackets('Unbalanced brackets')
-        if brackets and not k.endswith(']'):
-            raise Unparsable('Nesting notation broken')
-
-    def _parse_array(self, k: str, v: str | list) -> None:
-        """
-        Parses key with array notation into a list of nested keys.
-
-        Args:
-            k (str): key to parse
-            v (str): value to assign to the key
-        """
-        notation = self._split_key(k)
-        if notation is None:
-            # continue as default lhs
-            self._parse_arrays = False
-            self.transform_to_object()
-            return self._parse_lhs(k, v)
-        if re.match(r'[^\d]+', notation[1]):
-            self._parse_arrays = False
-            self.transform_to_object()
-            return self._parse_lhs(k, v)
-        try:
-            item = ArrayParse.process(notation, v)
-            item.set_index(self._qs_tree.get(item.key, None),
-                           array_limit=self._array_limit)
-        except ArrayLimitReached:
-            self._parse_arrays = False
-            self.transform_to_object()
-            return self._parse_lhs(k, v)
-        if item.key not in self._qs_tree:
-            if len(self._qs_tree) >= self._parameter_limit:
-                return
-            self._qs_tree[item.key] = item
-        else:
-            self._qs_tree[item.key].update(item)
-
-    def _parse_lhs(self, k: str, v: str | list) -> None:
-        """
-        Parses key with brackets notation into a list of nested keys.
-
-        Args:
-            k (str): key to parse
-            v (str): value to assign to the key
-        """
-        notation = self._split_key(k)
-        if notation is None:
-            raise Unparsable('Unable to parse key')
-        data = LHSParse.process(
-            notation, v, depth=self._max_depth, allow_empty=self._allow_empty)
-        if data.key not in self._qs_tree:
-            if len(self._qs_tree) >= self._parameter_limit:
-                return
-            self._qs_tree[data.key] = data
-        else:
-            self._qs_tree[data.key].update(data)
-
-    def transform_to_object(self) -> None:
+    def _to_obj(self) -> None:
         """
         Transforms array-like dictionary into object-like dictionary, recursively.
 
@@ -358,7 +334,10 @@ def parse(
         for arg in query_args:
             args.append(QsParser._unq(
                 arg, charset, interpret_numeric_entities))
-        return QsParser(args, depth, parameter_limit, allow_dots, allow_sparse, array_limit, parse_arrays, allow_empty, comma).args
+        parser = QsParser(depth, parameter_limit, allow_dots,
+                          allow_sparse, array_limit, parse_arrays, allow_empty, comma)
+        parser.parse(args)
+        return parser.args
     except (Unparsable, UnbalancedBrackets):
         return up.parse_qs(
             qs,
