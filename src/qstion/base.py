@@ -1,5 +1,7 @@
 # Parser errors
 import typing as t
+from html import unescape as unescape_html
+import urllib.parse as up
 
 
 class Unparsable(Exception):
@@ -194,3 +196,22 @@ class QS:
         self._parse_arrays = parse_arrays
         self._allow_empty = allow_empty
         self._comma = comma
+
+    @staticmethod
+    def _unq(arg: str, charset: str = 'utf-8', interpret_numeric_entities: bool = False) -> str:
+        """
+        Unquotes a string (removes url encoding).
+
+        Args:
+            arg (str): string to unquote
+
+        Returns:
+            str: unquoted string
+        """
+        try:
+            arg_key, arg_val = arg.split('=')
+        except ValueError:
+            raise Unparsable('Unable to parse key')
+        if interpret_numeric_entities:
+            return f'{unescape_html(up.unquote(arg_key, charset))}={unescape_html(up.unquote(arg_val, charset))}'
+        return f'{up.unquote(arg_key, charset)}={up.unquote(arg_val, charset)}'

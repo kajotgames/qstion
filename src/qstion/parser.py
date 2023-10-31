@@ -1,6 +1,5 @@
 import typing as t
 import urllib.parse as up
-from html import unescape as unescape_html
 import re
 from .base import QS, Unparsable, UnbalancedBrackets, QsNode, EmptyKey, ArrayLimitReached
 
@@ -182,25 +181,6 @@ class QsParser(QS):
             raise UnbalancedBrackets('Unbalanced brackets')
         if brackets and not k.endswith(']'):
             raise Unparsable('Nesting notation broken')
-
-    @staticmethod
-    def _unq(arg: str, charset: str = 'utf-8', interpret_numeric_entities: bool = False) -> str:
-        """
-        Unquotes a string (removes url encoding).
-
-        Args:
-            arg (str): string to unquote
-
-        Returns:
-            str: unquoted string
-        """
-        try:
-            arg_key, arg_val = arg.split('=')
-        except ValueError:
-            raise Unparsable('Unable to parse key')
-        if interpret_numeric_entities:
-            return f'{unescape_html(up.unquote(arg_key, charset))}={unescape_html(up.unquote(arg_val, charset))}'
-        return f'{up.unquote(arg_key, charset)}={up.unquote(arg_val, charset)}'
 
     def _parse_array(self, k: str, v: str | list) -> None:
         """
