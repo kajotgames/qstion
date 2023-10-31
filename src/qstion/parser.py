@@ -3,6 +3,8 @@ import urllib.parse as up
 import re
 from .base import QS, Unparsable, UnbalancedBrackets, QsNode, EmptyKey, ArrayLimitReached
 
+#TODO: parsing primitive values into their actual types
+
 t_Delimiter = t.Union[str, t.Pattern[str]]
 
 

@@ -25,6 +25,34 @@ class QsNode:
     children: list['QsNode']
     value: t.Any
 
+    @classmethod
+    def load(
+        cls,
+        data: t.Any,
+        parse_arrays: bool = False,
+        depth: int = 5,
+    ) -> 'QsNode':
+        """
+        Load a dictionary into a QsNode
+
+        Args:
+            data (dict): dictionary to load
+            parse_arrays (bool): parse array values as or keep object notation
+            depth (int): max depth of nested objects
+            - e.g. depth=1 : {'a': {'b': 'c'}} -> a[b]=c
+
+        Returns:
+            QsNode: root node
+        """
+        if isinstance(data, dict):
+            # recursively load
+            pass
+        elif isinstance(data, list):
+            # data are either primitives or dictionaries
+            # in case of dictionaries - recursively load and set indexes
+            # in case of primitives - verify type and set indexes
+            pass
+
     def __init__(self, key: str | int, value: t.Any):
         self.key = key
         self.children = []

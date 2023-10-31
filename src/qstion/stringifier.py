@@ -1,28 +1,13 @@
-from .base import QS
+from .base import QS, QsNode
 
 
 class QsStringifier(QS):
-    _qs: str = None
-
-    def __init__(self, data: dict, **kw):
-        super().__init__(**kw)
-        query_args = []
-        for k, v in data.items():
-            query_args.extend(self._stringify_arg(k, v))
-        self._process(query_args)
-
-    def _stringify_arg(self, k, v):
-        pass
-
-    def _process(self, query_args):
-        pass
 
     @property
     def qs(self):
-        return self._qs
+        pass
 
-    @classmethod
-    def stringify(cls, data: dict, **kw) -> str:
+    def stringify(self, data: dict) -> str:
         """
         Process a dictionary into a query string
 
@@ -44,8 +29,23 @@ class QsStringifier(QS):
         Returns:    
             str: query string
         """
-        return cls(**kw).qs
+        for item in data:
+            self._qs_tree[item] = QsNode.load(
+                item, 
+                data[item], 
+                parse_arrays=self._parse_arrays,
+                depth=self._max_depth)
 
 
-def stringify(data: dict, **kw):
-    return QsStringifier(**kw).stringify(data)
+def stringify(
+        data: dict,
+        depth: int = 5,
+        parameter_limit: int = 1000,
+        allow_dots: bool = False,
+        allow_sparse: bool = False,
+        array_limit: int = 20,
+        parse_arrays: bool = False,
+        allow_empty: bool = False,
+        comma: bool = False,
+) -> str:
+    pass
