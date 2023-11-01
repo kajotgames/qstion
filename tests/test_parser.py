@@ -1,12 +1,12 @@
-
 import unittest
 import sys
 sys.path.append(".")
-import src.qstion as qs
+
 
 class ParserTest(unittest.TestCase):
 
     def test_basic_parse_objects(self):
+        import src.qstion as qs
         # tests based on README of qs in npm: https://www.npmjs.com/package/qs?activeTab=readme
         obj = qs.parse('a=c')
         self.assertDictEqual(obj, {'a': 'c'})
@@ -83,6 +83,7 @@ class ParserTest(unittest.TestCase):
             {'a': '☺'})
 
     def test_advanced_parse_objects(self):
+        import src.qstion as qs
         # two separate nested objects
         self.assertDictEqual(
             qs.parse('a[b]=c&d[e]=f'),
@@ -123,7 +124,13 @@ class ParserTest(unittest.TestCase):
             qs.parse('a[b]=c&a[b]=f&a[b]=e'),
             {'a': {'b': ['c', 'f', 'e']}})
 
+        # test array as string value
+        self.assertDictEqual(
+            qs.parse('a=[b,c]'),
+            {'a': ['b', 'c']})
+
     def test_basic_parse_arrays(self):
+        import src.qstion as qs
         # NOTE
         # since python list would by default not support sparse indexes, dictionary is used instead
         # however, notation is still strictly checked so array notation is accepted
@@ -195,7 +202,88 @@ class ParserTest(unittest.TestCase):
             qs.parse('a=b,c', comma=True),
             {'a': ['b', 'c']})
 
-    # TODO add tests for primitive/scalar values
+    def test_basic_primitive_values(self):
+        import src.qstion as qs
+        # test some basic string values
+        self.assertDictEqual(
+            qs.parse('a=b'),
+            {'a': 'b'})
+
+        # with allowed primitive values, nothing should change
+        self.assertDictEqual(
+            qs.parse('a=b', parse_primitive=True),
+            {'a': 'b'})
+
+        # test with integer value
+        self.assertDictEqual(
+            qs.parse('a=1'),
+            {'a': '1'})
+
+        # with allowed primitive values, parsed should be integer
+        self.assertDictEqual(
+            qs.parse('a=1', parse_primitive=True),
+            {'a': 1})
+
+        # test with float value
+        self.assertDictEqual(
+            qs.parse('a=1.1'),
+            {'a': '1.1'})
+
+        # with allowed primitive values, parsed should be float
+        self.assertDictEqual(
+            qs.parse('a=1.1', parse_primitive=True),
+            {'a': 1.1})
+
+        # test with boolean value
+        self.assertDictEqual(
+            qs.parse('a=true&b=false'),
+            {'a': 'true', 'b': 'false'})
+
+        # with allowed primitive values, parsed should be boolean
+        self.assertDictEqual(
+            qs.parse('a=true&b=false', parse_primitive=True),
+            {'a': True, 'b': False})
+
+        # test with null value
+        self.assertDictEqual(
+            qs.parse('a=null&b=NULL&c=Null&d=None'),
+            {'a': 'null', 'b': 'NULL', 'c': 'Null', 'd': 'None'})
+
+        # with allowed primitive values, parsed should be None
+        self.assertDictEqual(
+            qs.parse('a=null&b=NULL&c=Null&d=None', parse_primitive=True),
+            {'a': None, 'b': None, 'c': None, 'd': None})
+
+        # test array of primitive values
+        self.assertDictEqual(
+            qs.parse('a[]=1&a[]=2&a[]=3', parse_arrays=True),
+            {'a': {0: '1', 1: '2', 2: '3'}})
+
+        # with allowed primitive values, parsed should be array of integers
+        self.assertDictEqual(
+            qs.parse('a[]=1&a[]=2&a[]=3', parse_arrays=True,
+                     parse_primitive=True),
+            {'a': {0: 1, 1: 2, 2: 3}})
+
+        # test classic array of primitive values
+        self.assertDictEqual(
+            qs.parse('a=[1,2,3]'),
+            {'a': ['1', '2', '3']})
+        
+        # with allowed primitive values, parsed should be array of integers
+        self.assertDictEqual(
+            qs.parse('a=[1,2,3]', parse_primitive=True),
+            {'a': [1, 2, 3]})
+        
+        # test classic array of primitive values with mixed types
+        self.assertDictEqual(
+            qs.parse('a=[1,a,true,Null]'),
+            {'a': ['1', 'a', 'true', 'Null']})
+        
+        # with allowed primitive values, parsed should be array of primitives with mixed types
+        self.assertDictEqual(
+            qs.parse('a=[1,a,true,Null]', parse_primitive=True),
+            {'a': [1, 'a', True, None]})
 
 
 if __name__ == '__main__':

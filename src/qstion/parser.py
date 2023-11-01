@@ -3,7 +3,6 @@ import urllib.parse as up
 import re
 from .base import QS, Unparsable, UnbalancedBrackets, QsNode, EmptyKey, ArrayLimitReached
 
-#TODO: parsing primitive values into their actual types
 
 t_Delimiter = t.Union[str, t.Pattern[str]]
 
@@ -139,6 +138,24 @@ class LHSParse:
 
 
 class QsParser(QS):
+    _parse_primitive: bool = False
+
+    def __init__(
+            self,
+            depth: int = 5,
+            parameter_limit: int = 1000,
+            allow_dots: bool = False,
+            allow_sparse: bool = False,
+            array_limit: int = 20,
+            parse_arrays: bool = False,
+            allow_empty: bool = False,
+            comma: bool = False,
+            parse_primitive: bool = False
+    ):
+        super().__init__(depth, parameter_limit, allow_dots,
+                         allow_sparse, array_limit, parse_arrays, allow_empty, comma)
+        self._parse_primitive = parse_primitive
+
     def parse(self, args: list[str]):
         for arg in args:
             parse_func = self._parse_array if self._parse_arrays else self._parse_lhs
@@ -156,6 +173,23 @@ class QsParser(QS):
         return {
             k.key: k.serialize() for k in self._qs_tree.values()
         }
+
+    @staticmethod
+    def _from_array_like(v: str | list) -> list | str:
+        """
+        Converts array-like string to list.
+
+        Args:
+            v (str): string to convert
+
+        Returns:
+            list: converted list
+        """
+
+        if isinstance(v,str) and (v.startswith('[') and v.endswith(']')):
+            v = v.rstrip(']').lstrip('[')
+            return v.split(',')
+        return v
 
     @staticmethod
     def _check_brackets(k: str) -> None:
@@ -192,6 +226,7 @@ class QsParser(QS):
             k (str): key to parse
             v (str): value to assign to the key
         """
+        v = self._process_primitive(v)
         notation = self._split_key(k)
         if notation is None:
             # continue as default lhs
@@ -225,6 +260,7 @@ class QsParser(QS):
             k (str): key to parse
             v (str): value to assign to the key
         """
+        v = self._process_primitive(v)
         notation = self._split_key(k)
         if notation is None:
             raise Unparsable('Unable to parse key')
@@ -236,6 +272,25 @@ class QsParser(QS):
             self._qs_tree[data.key] = data
         else:
             self._qs_tree[data.key].update(data)
+
+    def _process_primitive(self, v: str | list) -> t.Any:
+        v = self._from_array_like(v)
+        if not self._parse_primitive:
+            return v
+        if isinstance(v, list):
+            return [self._process_primitive(item) for item in v]
+        if v.isdigit():
+            return int(v)
+        # TODO: decide whether accept case insensitive booleans
+        if v.lower() in ['true', 'false']:
+            return v.lower() == 'true'
+        # TODO: decide whether accept case insensitive nulls
+        if v.lower() in ['null', 'none']:
+            return None
+        try:
+            return float(v)
+        except ValueError:
+            return v
 
     def _split_key(self, k: str) -> list[str] | None:
         """
@@ -294,6 +349,7 @@ def parse(
         allow_empty: bool = False,
         charset: str = 'utf-8',
         interpret_numeric_entities: bool = False,
+        parse_primitive: bool = False,
         comma: bool = False):
     """
     Parses a string into a dictionary.
@@ -317,7 +373,7 @@ def parse(
             args.append(QsParser._unq(
                 arg, charset, interpret_numeric_entities))
         parser = QsParser(depth, parameter_limit, allow_dots,
-                          allow_sparse, array_limit, parse_arrays, allow_empty, comma)
+                          allow_sparse, array_limit, parse_arrays, allow_empty, comma, parse_primitive)
         parser.parse(args)
         return parser.args
     except (Unparsable, UnbalancedBrackets):
@@ -326,3 +382,6 @@ def parse(
             keep_blank_values=allow_empty,
             max_num_fields=parameter_limit,
             separator=delimiter)
+
+if __name__ == "__main__":
+    item = parse('a=[b,c]')
