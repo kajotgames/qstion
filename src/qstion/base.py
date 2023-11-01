@@ -25,12 +25,22 @@ class QsNode:
     children: list['QsNode']
     value: t.Any
 
+    def __init__(self, key: str | int, value: t.Any):
+        self.key = key
+        self.children = []
+        if isinstance(value, type(self)):
+            self.children = [value]
+            self.value = None
+        else:
+            self.value = value
+            self.children = []
+
     @classmethod
     def load(
         cls,
+        parent_key: str | int,
         data: t.Any,
         parse_arrays: bool = False,
-        depth: int = 5,
     ) -> 'QsNode':
         """
         Load a dictionary into a QsNode
@@ -44,24 +54,21 @@ class QsNode:
         Returns:
             QsNode: root node
         """
+        root = cls(parent_key, None)
         if isinstance(data, dict):
-            # recursively load
-            pass
+            for k, v in data.items():
+                root.children.append(cls.load(k, v, parse_arrays=parse_arrays))
         elif isinstance(data, list):
-            # data are either primitives or dictionaries
-            # in case of dictionaries - recursively load and set indexes
-            # in case of primitives - verify type and set indexes
-            pass
-
-    def __init__(self, key: str | int, value: t.Any):
-        self.key = key
-        self.children = []
-        if isinstance(value, type(self)):
-            self.children = [value]
-            self.value = None
+            if all([isinstance(v, dict) for v in data]):
+                # list of dictionaries, indexed
+                for i, v in enumerate(data):
+                    root.children.append(
+                        cls.load(i, v, parse_arrays=parse_arrays))
+            else:
+                # list of primitives
+                root.value = data
         else:
-            self.value = value
-            self.children = []
+            root.value = data
 
     def __getitem__(self, key: str):
         for child in self.children:

@@ -186,7 +186,7 @@ class QsParser(QS):
             list: converted list
         """
 
-        if isinstance(v,str) and (v.startswith('[') and v.endswith(']')):
+        if isinstance(v, str) and (v.startswith('[') and v.endswith(']')):
             v = v.rstrip(']').lstrip('[')
             return v.split(',')
         return v
@@ -382,6 +382,7 @@ def parse(
             keep_blank_values=allow_empty,
             max_num_fields=parameter_limit,
             separator=delimiter)
+
 
 if __name__ == "__main__":
     item = parse('a=[b,c]')
