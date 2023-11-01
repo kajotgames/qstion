@@ -156,10 +156,10 @@ class QsParser(QS):
                          allow_sparse, array_limit, parse_arrays, allow_empty, comma)
         self._parse_primitive = parse_primitive
 
-    def parse(self, args: list[str]):
+    def parse(self, args: list[tuple]):
         for arg in args:
             parse_func = self._parse_array if self._parse_arrays else self._parse_lhs
-            k, v = arg.split('=')
+            k, v = arg
             if self._comma:
                 v = re.split(',', v)
                 v = str(v[0]) if len(v) == 1 else v

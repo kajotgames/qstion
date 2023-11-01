@@ -2,20 +2,26 @@ from .base import QS, QsNode
 import urllib.parse as up
 import typing as t
 
+# TODO add custom encoder support
+LIST_FORMAT_OPTIONS = ['indices', 'brackets', 'repeat', 'comma']
+
 
 class QsStringifier(QS):
-    _delimiter: str
+    _af: str = 'indices'
 
-    def __init__(self, depth: int = 5, parameter_limit: int = 1000, allow_dots: bool = False, allow_sparse: bool = False, array_limit: int = 20, parse_arrays: bool = False, allow_empty: bool = False, comma: bool = False, delimiter: str = '&'):
+    def __init__(self, depth: int = 5, parameter_limit: int = 1000, allow_dots: bool = False, allow_sparse: bool = False, array_limit: int = 20, parse_arrays: bool = False, allow_empty: bool = False, comma: bool = False, array_format: str = 'indices'):
         super().__init__(depth, parameter_limit, allow_dots,
                          allow_sparse, array_limit, parse_arrays, allow_empty, comma)
-        self._delimiter = delimiter
+        if array_format not in LIST_FORMAT_OPTIONS:
+            raise ValueError(
+                f'array_format must be one of {LIST_FORMAT_OPTIONS}')
+        self._af = array_format
 
     @staticmethod
     def _q(key: str, value: str) -> str:
         return f'{up.quote(key)}={up.quote(value)}'
 
-    def stringify(self, data: dict) -> str:
+    def stringify(self, data: dict) -> list[tuple]:
         """
         Process a dictionary into a query string
 
@@ -41,44 +47,108 @@ class QsStringifier(QS):
         for item in data:
             self._qs_tree[item] = QsNode.load(
                 item,
-                data[item],
-                parse_arrays=self._parse_arrays)
+                data[item])
         for item in self._qs_tree.values():
             for arg in self._get_arg(item):
-                _q_args.update(self._transform_arg(arg))
-        return self._delimiter.join([self._q(*i) for i in _q_args.items()])
+                prepared_arg = self._transform_arg(arg)
+                if prepared_arg[0] in _q_args:
+                    _q_args[prepared_arg[0]] = [_q_args[prepared_arg[0]], prepared_arg[1]] if isinstance(
+                        _q_args[prepared_arg[0]], str) else [*_q_args[prepared_arg[0]], prepared_arg[1]]
+                else:
+                    _q_args[prepared_arg[0]] = prepared_arg[1]
+        res = []
+        for key, value in _q_args.items():
+            if isinstance(value, list) and self._af == 'repeat':
+                res += [(key, v) for v in value]
+            else:
+                res.append((key, str(value)))
+        return res
+
+    def _format_key(self, key: list) -> str | None:
+        if len(key) == 1:
+            # decide based on array_format
+            k = key[0]
+            match self._af:
+                case 'indices':
+                    return f'[{k}]'
+                case 'brackets':
+                    if isinstance(k, int):
+                        return f'[]'
+                    return f'[{k}]'
+                case 'repeat':
+                    return None
+                case 'comma':
+                    return None
+        else:
+            current_key = key.pop()
+            formatted = self._format_key(key)
+            if formatted is None:
+                return f'[{current_key}]' if not self._allow_dots else f'.{current_key}'
+            if self._allow_dots:
+                return f'{current_key}.{formatted}'
+            return f'[{current_key}]{formatted}'
 
     def _get_arg(self, node: QsNode) -> tuple[str, t.Any]:
         if node.is_leaf():
             yield ([node.key], node.value)
+        elif node.is_default_array() and self._af == 'comma':
+            yield ([node.key], ','.join([str(child.value) for child in node.children]))
         else:
             for child in node.children:
                 for arg in self._get_arg(child):
                     yield ([*arg[0], node.key], arg[1])
 
-    def _transform_arg(self, arg: tuple[list, t.Any]) -> dict:
+    def _transform_arg(self, arg: tuple[list, t.Any]) -> tuple[str, t.Any]:
         notation, value = arg
         if len(notation) == 1:
-            return {notation[0]: value}
+            return (notation[0], value)
         key = notation.pop()
         if self._allow_dots:
-            for i in reversed(notation):
-                key = f'{key}.{i}'
+            key = f'{key}.{self._format_key(notation)}'
         else:
-            for i in reversed(notation):
-                key = f'{key}[{i}]'
-        return {key: value}
+            key = f'{key}{self._format_key(notation)}'
+        return (key, value)
 
 
 def stringify(
         data: dict,
-        depth: int = 5,
-        parameter_limit: int = 1000,
         allow_dots: bool = False,
-        allow_sparse: bool = False,
-        array_limit: int = 20,
-        parse_arrays: bool = False,
         allow_empty: bool = False,
-        comma: bool = False,
+        encode: bool = True,
+        delimiter: str = '&',
+        encode_values_only: bool = False,
+        array_format: str = 'indices',
 ) -> str:
-    pass
+    """
+    Process a dictionary into a query string
+
+    Args:
+        data (dict): dictionary to process
+        depth (int): max depth of nested objects
+        - e.g. depth=1 : {'a': {'b': 'c'}} -> a[b]=c
+        parameter_limit (int): max number of parameters to parse (in keyword count)
+        allow_dots (bool): allow dot notation
+        - e.g. {'a': {'b': 'c'}} -> a.b=c
+        allow_sparse (bool): allow sparse arrays
+        - e.g. {'a': [,'b',,'c']} -> a[1]=b&a[5]=c
+        array_limit (int): max number of elements in array
+        if limit is reached, array is converted to object
+        parse_arrays (bool): parse array values as or keep object notation
+        comma (bool): allow comma separated values
+        - e.g. {'a': ['b', 'c']} -> a=b,c
+        encode (bool): encode query string
+
+    Returns:    
+        str: query string
+    """
+    qs = QsStringifier(
+        allow_dots=allow_dots,
+        allow_empty=allow_empty,
+        array_format=array_format
+    )
+    _qt = qs.stringify(data)
+    if encode:
+        return delimiter.join([qs._q(k, v) for k, v in _qt])
+    elif encode_values_only:
+        return delimiter.join([f'{k}={up.quote(v)}' for k, v in _qt])
+    return delimiter.join([f'{k}={v}' for k, v in _qt])

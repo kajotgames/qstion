@@ -1,15 +1,24 @@
 import unittest
 
-from . import test_parser
+from . import test_parse, test_stringify
 
-def suite() -> unittest.TestSuite:
+TEST_MODULES = [
+    test_parse,
+    test_stringify
+]
+
+
+
+def suites():
     loader = unittest.TestLoader()
-    return loader.loadTestsFromModule(test_parser)
+    for module in TEST_MODULES:
+        yield loader.loadTestsFromModule(module)
 
 
 def main():
     runner = unittest.TextTestRunner()
-    runner.run(suite())
+    for suite in suites():
+        runner.run(suite)
 
 
 if __name__ == "__main__":

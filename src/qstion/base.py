@@ -40,7 +40,6 @@ class QsNode:
         cls,
         parent_key: str | int,
         data: t.Any,
-        parse_arrays: bool = False,
     ) -> 'QsNode':
         """
         Load a dictionary into a QsNode
@@ -57,18 +56,16 @@ class QsNode:
         root = cls(parent_key, None)
         if isinstance(data, dict):
             for k, v in data.items():
-                root.children.append(cls.load(k, v, parse_arrays=parse_arrays))
+                root.children.append(cls.load(k, v))
         elif isinstance(data, list):
-            if all([isinstance(v, dict) for v in data]):
-                # list of dictionaries, indexed
-                for i, v in enumerate(data):
-                    root.children.append(
-                        cls.load(i, v, parse_arrays=parse_arrays))
-            else:
-                # list of primitives
-                root.value = data
+            # list of dictionaries, indexed
+            for i, v in enumerate(data):
+                root.children.append(
+                    cls.load(i, v))
+
         else:
             root.value = data
+        return root
 
     def __getitem__(self, key: str):
         for child in self.children:
@@ -104,6 +101,10 @@ class QsNode:
 
     def is_array(self):
         if self.value is None and all([child.has_int_key() for child in self.children]):
+            return True
+
+    def is_default_array(self):
+        if self.is_array() and all([child.is_leaf() for child in self.children]):
             return True
 
     def max_index(self) -> int:
@@ -249,4 +250,4 @@ class QS:
             raise Unparsable('Unable to parse key')
         if interpret_numeric_entities:
             return f'{unescape_html(up.unquote(arg_key, charset))}={unescape_html(up.unquote(arg_val, charset))}'
-        return f'{up.unquote(arg_key, charset)}={up.unquote(arg_val, charset)}'
+        return (up.unquote(arg_key, charset), up.unquote(arg_val, charset))
