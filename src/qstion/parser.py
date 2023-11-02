@@ -4,6 +4,7 @@ import re
 from .base import QS, Unparsable, UnbalancedBrackets, QsNode, EmptyKey, ArrayLimitReached
 from html import unescape as unescape_html
 
+#TODO test combo of delimiter being comma and parsing comma separated values
 
 t_Delimiter = t.Union[str, t.Pattern[str]]
 

@@ -2,7 +2,6 @@ from .base import QS, QsNode
 import urllib.parse as up
 import typing as t
 
-# TODO add custom encoder support
 LIST_FORMAT_OPTIONS = ['indices', 'brackets', 'repeat', 'comma']
 
 

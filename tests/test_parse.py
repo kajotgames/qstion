@@ -48,8 +48,6 @@ class ParserTest(unittest.TestCase):
             qs.parse('a=b&b=c&a=d', parameter_limit=1),
             {'a': ['b', 'd']})
 
-        # TODO ignore prefix not supported yet
-
         # optional delimiter
         self.assertDictEqual(
             qs.parse('a=b;c=d', delimiter=';'),
