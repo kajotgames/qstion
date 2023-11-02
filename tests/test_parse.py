@@ -74,7 +74,20 @@ class ParserTest(unittest.TestCase):
             qs.parse('a=%A7', charset='iso-8859-1'),
             {'a': '§'})
 
-        # TODO implement charsetSentinel
+        # Some services add an initial utf8=✓ value to forms so that old Internet Explorer versions are more likely to submit the form as utf-8.
+        # qs supports this mechanism via the charsetSentinel option. 
+        # If specified, the utf8 parameter will be omitted from the returned object. 
+        # It will be used to switch to iso-8859-1/utf-8 mode depending on how the checkmark is encoded.
+        # Important: When you specify both the charset option and the charsetSentinel option,
+        #  the charset will be overridden when the request contains a utf8 parameter from which the actual charset can be deduced. 
+        # In that sense the charset will behave as the default charset rather than the authoritative charset.\
+        self.assertDictEqual(
+            qs.parse('utf8=%E2%9C%93&a=%C3%B8', charset_sentinel=True, charset='iso-8859-1'),
+            {'a': 'ø'})
+        
+        self.assertDictEqual(
+            qs.parse('utf8=%26%2310003%3B&a=%F8', charset_sentinel=True, charset='utf-8'),
+            {'a': 'ø'})
 
         # interpretNumericEntities &#...; syntax to the actual character
         self.assertDictEqual(
@@ -269,17 +282,17 @@ class ParserTest(unittest.TestCase):
         self.assertDictEqual(
             qs.parse('a=[1,2,3]'),
             {'a': ['1', '2', '3']})
-        
+
         # with allowed primitive values, parsed should be array of integers
         self.assertDictEqual(
             qs.parse('a=[1,2,3]', parse_primitive=True),
             {'a': [1, 2, 3]})
-        
+
         # test classic array of primitive values with mixed types
         self.assertDictEqual(
             qs.parse('a=[1,a,true,Null]'),
             {'a': ['1', 'a', 'true', 'Null']})
-        
+
         # with allowed primitive values, parsed should be array of primitives with mixed types
         self.assertDictEqual(
             qs.parse('a=[1,a,true,Null]', parse_primitive=True),

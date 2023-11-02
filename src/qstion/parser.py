@@ -2,6 +2,7 @@ import typing as t
 import urllib.parse as up
 import re
 from .base import QS, Unparsable, UnbalancedBrackets, QsNode, EmptyKey, ArrayLimitReached
+from html import unescape as unescape_html
 
 
 t_Delimiter = t.Union[str, t.Pattern[str]]
@@ -174,6 +175,32 @@ class QsParser(QS):
             k.key: k.serialize() for k in self._qs_tree.values()
         }
 
+    @staticmethod
+    def _find_charset_sentinel(args: list[str]) -> str | None:
+        """
+        Finds charset sentinel.
+
+        Args:
+            args (list): list of arguments
+
+        Returns:
+            str: charset sentinel or None if not found
+        """
+        utf_idx = None
+        for idx, arg in enumerate(args):
+            if arg.split('=')[0] == 'utf8':
+                utf_idx = idx
+                break
+        if utf_idx is None:
+            return None
+        val = args.pop(utf_idx).split('=')[1]
+        if up.unquote(val, encoding='utf-8') == '✓':
+            return 'utf-8'
+        elif unescape_html(up.unquote(val, encoding='iso-8859-1')) == '✓':
+            return 'iso-8859-1'
+        else:
+            raise Unparsable('Unable to parse charset sentinel')
+    
     @staticmethod
     def _from_array_like(v: str | list) -> list | str:
         """
@@ -348,6 +375,7 @@ def parse(
         parse_arrays: bool = False,
         allow_empty: bool = False,
         charset: str = 'utf-8',
+        charset_sentinel: bool = False,
         interpret_numeric_entities: bool = False,
         parse_primitive: bool = False,
         comma: bool = False):
@@ -369,6 +397,8 @@ def parse(
     args = []
     try:
         query_args = re.split(delimiter, qs)
+        if charset_sentinel:
+            charset = QsParser._find_charset_sentinel(query_args) or charset
         for arg in query_args:
             args.append(QsParser._unq(
                 arg, charset, interpret_numeric_entities))

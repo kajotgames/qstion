@@ -17,11 +17,7 @@ class QsStringifier(QS):
                 f'array_format must be one of {LIST_FORMAT_OPTIONS}')
         self._af = array_format
 
-    @staticmethod
-    def _q(key: str, value: str) -> str:
-        return f'{up.quote(key)}={up.quote(value)}'
-
-    def stringify(self, data: dict) -> list[tuple]:
+    def stringify(self, data: dict, filter: list = None) -> list[tuple]:
         """
         Process a dictionary into a query string
 
@@ -45,11 +41,16 @@ class QsStringifier(QS):
         """
         _q_args = {}
         for item in data:
-            self._qs_tree[item] = QsNode.load(
+            node = QsNode.load(
                 item,
-                data[item])
+                data[item],
+                filter=filter)
+            if node is not None:
+                self._qs_tree[node.key] = node
         for item in self._qs_tree.values():
             for arg in self._get_arg(item):
+                if arg is None:
+                    continue
                 prepared_arg = self._transform_arg(arg)
                 if prepared_arg[0] in _q_args:
                     _q_args[prepared_arg[0]] = [_q_args[prepared_arg[0]], prepared_arg[1]] if isinstance(
@@ -58,7 +59,7 @@ class QsStringifier(QS):
                     _q_args[prepared_arg[0]] = prepared_arg[1]
         res = []
         for key, value in _q_args.items():
-            if isinstance(value, list) and self._af == 'repeat':
+            if isinstance(value, list) and (self._af == 'repeat' or self._af == 'brackets'):
                 res += [(key, v) for v in value]
             else:
                 res.append((key, str(value)))
@@ -70,7 +71,7 @@ class QsStringifier(QS):
             k = key[0]
             match self._af:
                 case 'indices':
-                    return f'[{k}]'
+                    return f'[{k}]' if not self._allow_dots else k
                 case 'brackets':
                     if isinstance(k, int):
                         return f'[]'
@@ -90,23 +91,27 @@ class QsStringifier(QS):
 
     def _get_arg(self, node: QsNode) -> tuple[str, t.Any]:
         if node.is_leaf():
-            yield ([node.key], node.value)
+            if node.is_empty():
+                yield None
+            else:
+                yield ([node.key], node.value)
         elif node.is_default_array() and self._af == 'comma':
             yield ([node.key], ','.join([str(child.value) for child in node.children]))
         else:
             for child in node.children:
                 for arg in self._get_arg(child):
-                    yield ([*arg[0], node.key], arg[1])
+                    yield arg if arg is None else ([*arg[0], node.key], arg[1])
 
     def _transform_arg(self, arg: tuple[list, t.Any]) -> tuple[str, t.Any]:
         notation, value = arg
         if len(notation) == 1:
             return (notation[0], value)
         key = notation.pop()
+        nesting = self._format_key(notation)
         if self._allow_dots:
-            key = f'{key}.{self._format_key(notation)}'
+            key = f'{key}{("." + nesting) if nesting is not None else ""}'
         else:
-            key = f'{key}{self._format_key(notation)}'
+            key = f'{key}{nesting or ""}'
         return (key, value)
 
 
@@ -118,6 +123,11 @@ def stringify(
         delimiter: str = '&',
         encode_values_only: bool = False,
         array_format: str = 'indices',
+        sort: bool = False,
+        sort_reverse: bool = False,
+        charset: str = 'utf-8',
+        # TODO implement filter to be callable
+        filter: list = None,
 ) -> str:
     """
     Process a dictionary into a query string
@@ -146,9 +156,11 @@ def stringify(
         allow_empty=allow_empty,
         array_format=array_format
     )
-    _qt = qs.stringify(data)
+    _qt = qs.stringify(data, filter=filter)
+    if sort:
+        _qt = sorted(_qt, key=lambda x: x[0], reverse=sort_reverse)
     if encode:
-        return delimiter.join([qs._q(k, v) for k, v in _qt])
+        return delimiter.join([qs._q(k, v, charset=charset) for k, v in _qt])
     elif encode_values_only:
-        return delimiter.join([f'{k}={up.quote(v)}' for k, v in _qt])
+        return delimiter.join([f'{k}={up.quote(v, encoding=charset)}' for k, v in _qt])
     return delimiter.join([f'{k}={v}' for k, v in _qt])

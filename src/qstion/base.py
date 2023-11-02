@@ -40,6 +40,7 @@ class QsNode:
         cls,
         parent_key: str | int,
         data: t.Any,
+        filter: list = None
     ) -> 'QsNode':
         """
         Load a dictionary into a QsNode
@@ -54,15 +55,19 @@ class QsNode:
             QsNode: root node
         """
         root = cls(parent_key, None)
+        if filter and parent_key not in filter:
+            return None
         if isinstance(data, dict):
             for k, v in data.items():
-                root.children.append(cls.load(k, v))
+                child = cls.load(k, v, filter=filter)
+                if child is not None:
+                    root.children.append(child)
         elif isinstance(data, list):
             # list of dictionaries, indexed
             for i, v in enumerate(data):
-                root.children.append(
-                    cls.load(i, v))
-
+                child = cls.load(i, v, filter=filter)
+                if child is not None:
+                    root.children.append(child)
         else:
             root.value = data
         return root
@@ -181,6 +186,9 @@ class QsNode:
             if child.has_int_key() and child.key > array_limit:
                 raise ArrayLimitReached('Array limit reached')
 
+    def is_empty(self):
+        return self.is_leaf() and self.value is None
+
 
 class QS:
     _qs_tree: dict[str, QsNode]
@@ -249,5 +257,9 @@ class QS:
         except ValueError:
             raise Unparsable('Unable to parse key')
         if interpret_numeric_entities:
-            return f'{unescape_html(up.unquote(arg_key, charset))}={unescape_html(up.unquote(arg_val, charset))}'
+            return (unescape_html(up.unquote(arg_key, charset)), unescape_html(up.unquote(arg_val, charset)))
         return (up.unquote(arg_key, charset), up.unquote(arg_val, charset))
+
+    @staticmethod
+    def _q(key: str, value: str, charset: str = 'utf-8') -> str:
+        return f'{up.quote(key, encoding=charset)}={up.quote(value, encoding=charset)}'
