@@ -5,22 +5,29 @@ import urllib.parse as up
 
 
 class Unparsable(Exception):
+    """Exception raised when query string cannot be parsed with QsParser"""
     pass
 
 
 class ArrayLimitReached(Exception):
+    """Exception raised when array limit is reached while parsing query string"""
     pass
 
 
 class UnbalancedBrackets(Exception):
+    """Exception raised when query string contains unbalanced brackets"""
     pass
 
 
 class EmptyKey(Exception):
+    """Exception raised when query string contains empty key and is not allowed"""
     pass
 
 
 class QsNode:
+    """
+    Data structure to represent a query string as a tree for better manipulation of arrays and objects
+    """
     key: str | int
     children: list['QsNode']
     value: t.Any
@@ -43,16 +50,15 @@ class QsNode:
         filter: list = None
     ) -> 'QsNode':
         """
-        Load a dictionary into a QsNode
+        Load a dictionary into a QsNode recursively
 
         Args:
+            parent_key (str): parent key to be used as key for root node
             data (dict): dictionary to load
-            parse_arrays (bool): parse array values as or keep object notation
-            depth (int): max depth of nested objects
-            - e.g. depth=1 : {'a': {'b': 'c'}} -> a[b]=c
+            filter (list): list of keys to filter - if key is not in filter, it will be ignored
 
         Returns:
-            QsNode: root node
+            QsNode: current node
         """
         root = cls(parent_key, None)
         if filter and parent_key not in filter:
@@ -73,18 +79,27 @@ class QsNode:
         return root
 
     def __getitem__(self, key: str):
+        """
+        Overload [] operator to get child by key
+        """
         for child in self.children:
             if child.key == key:
                 return child
         raise KeyError(key)
 
     def get(self, key: str, default: t.Any = None):
+        """
+        Method to get child by key with default value - behaves like dict.get
+        """
         try:
             return self[key]
         except KeyError:
             return default
 
     def __setitem__(self, key: str, value: t.Any):
+        """
+        Overload [] operator to set child by key
+        """
         for child in self.children:
             if child.key == key:
                 child.value = value
@@ -93,48 +108,78 @@ class QsNode:
         self.reorder()
 
     def __contains__(self, key: str):
+        """
+        Overload in operator to check if child exists
+        """
         for child in self.children:
             if child.key == key:
                 return True
         return False
 
     def is_leaf(self):
+        """
+        Check if node is a leaf - has no children
+        """
         return self.children is None or len(self.children) == 0
 
     def has_int_key(self):
+        """
+        Check if node has an integer key - used to determine whether node might be an array item
+        """
         return isinstance(self.key, int)
 
     def is_array(self):
+        """
+        Check if node is an array - all children have integer keys - values might be nested
+        """
         if self.value is None and all([child.has_int_key() for child in self.children]):
             return True
 
     def is_default_array(self):
+        """
+        Check if node is a default array - all children have integer keys and are leafs
+        """
         if self.is_array() and all([child.is_leaf() for child in self.children]):
             return True
 
     def max_index(self) -> int:
+        """
+        Used to determine the next index for a new array item
+        """
         if self.is_array():
             return max([child.key for child in self.children])
         return -1
 
     def to_object_notation(self):
+        """
+        Transform self from possible array notation to default object notation - all integer indexes are replaced with 
+        their string representation
+        """
         if isinstance(self.key, int):
             self.key = str(self.key)
         for child in self.children:
             child.to_object_notation()
 
     def reorder(self):
+        """
+        Used to reorder children of a node - sorts them by key
+        Only works if node is considered an array
+        """
         if self.is_array():
             self.children.sort(key=lambda x: x.key)
             for child in self.children:
                 child.reorder()
 
     def update(self, other: 'QsNode'):
-       # HOWTO:
-       # if both are leafs, merge values
-       # if self is leaf and other is not, convert self to object and nest other if keys match else, merge
-       # if self is not leaf and other is, add new child to self with key as other value and value true ! ONLY if not in self children else unparsable
-       # if both are not leaves, merge their children
+        """
+        Recursively update self with other node
+
+        Args:
+            other (QsNode): node to update self with
+
+        Returns:
+            None
+        """
         if self.is_leaf() and other.is_leaf():
             self.merge_value(other)
         elif self.is_leaf() and not other.is_leaf():
@@ -161,6 +206,15 @@ class QsNode:
             self.reorder()
 
     def merge_value(self, other: 'QsNode'):
+        """
+        Merge values of two nodes
+
+        Args:
+            other (QsNode): node to merge value with
+
+        Returns:
+            None
+        """
         if not isinstance(self.value, list):
             self.value = [self.value]
         if not isinstance(other.value, list):
@@ -168,15 +222,26 @@ class QsNode:
         self.value.extend(other.value)
 
     def serialize(self):
+        """
+        Represent self as a dictionary
+        """
         if self.is_leaf():
             return self.value
         return {child.key: child.serialize() for child in self.children}
 
     def set_index(self, base: 'QsNode', array_limit: int = 20):
-        # if base is None:
-        #     set indexes in self nested children
-        # else:
-        #     set indexes based on base children
+        """
+        Set index of self and children recursively
+        If base is provided, it is used to match children by key
+        If array_limit is reached, ArrayLimitReached exception is raised
+
+        Args:
+            base (QsNode): base node to match children by key
+            array_limit (int): array limit
+
+        Returns:
+            None
+        """
         for child in self.children:
             match = base.get(child.key, None) if base else None
             child.set_index(match, array_limit=array_limit)
@@ -187,10 +252,16 @@ class QsNode:
                 raise ArrayLimitReached('Array limit reached')
 
     def is_empty(self):
+        """
+        Check if node is empty - has no value and no children
+        """
         return self.is_leaf() and self.value is None
 
 
 class QS:
+    """
+    Base class for query string parser and stringifier
+    """
     _qs_tree: dict[str, QsNode]
 
     _depth: int = 5
@@ -248,6 +319,8 @@ class QS:
 
         Args:
             arg (str): string to unquote
+            charset (str): charset to use for unquoting
+            interpret_numeric_entities (bool): interpret numeric entities in unicode
 
         Returns:
             str: unquoted string
@@ -262,4 +335,15 @@ class QS:
 
     @staticmethod
     def _q(key: str, value: str, charset: str = 'utf-8') -> str:
+        """
+        Encodes a string (url encoding).
+
+        Args:
+            key (str): key to encode
+            value (str): value to encode
+            charset (str): charset to use for encoding
+
+        Returns:
+            str: encoded string
+        """
         return f'{up.quote(key, encoding=charset, errors="xmlcharrefreplace")}={up.quote(value, encoding=charset, errors="xmlcharrefreplace")}'

@@ -9,6 +9,9 @@ t_Delimiter = t.Union[str, t.Pattern[str]]
 
 
 class ArrayParse:
+    """
+    Parses array notation into a tree like structure.
+    """
     _depth: int = 5
     _limit: int = 20
 
@@ -65,6 +68,10 @@ class ArrayParse:
 
 
 class LHSParse:
+    """
+    Parses left hand side notation into a tree like structure.
+    """
+
     _depth: int = 5
     _dots: bool = False
     _allow_empty: bool = False
@@ -158,6 +165,12 @@ class QsParser(QS):
         self._parse_primitive = parse_primitive
 
     def parse(self, args: list[tuple]):
+        """
+        Parses a list of key-value pairs into a dictionary of nested tree-like structures.
+
+        Args:
+            args (list): list of key-value pairs
+        """
         for arg in args:
             parse_func = self._parse_array if self._parse_arrays else self._parse_lhs
             k, v = arg
@@ -169,7 +182,7 @@ class QsParser(QS):
     @property
     def args(self) -> dict[str, str]:
         """
-        Returns parsed arguments.
+        Returns nested dictionary as representation of argument tree.
         """
         return {
             k.key: k.serialize() for k in self._qs_tree.values()
@@ -178,7 +191,7 @@ class QsParser(QS):
     @staticmethod
     def _find_charset_sentinel(args: list[str]) -> str | None:
         """
-        Finds charset sentinel.
+        Finds charset sentinel argument. If found, it is removed from original list.
 
         Args:
             args (list): list of arguments
@@ -200,7 +213,7 @@ class QsParser(QS):
             return 'iso-8859-1'
         else:
             raise Unparsable('Unable to parse charset sentinel')
-    
+
     @staticmethod
     def _from_array_like(v: str | list) -> list | str:
         """
@@ -301,6 +314,15 @@ class QsParser(QS):
             self._qs_tree[data.key].update(data)
 
     def _process_primitive(self, v: str | list) -> t.Any:
+        """
+        Processes primitive value into a proper type.
+
+        Args:
+            v (str): value to process
+
+        Returns:
+            Any: processed value
+        """
         v = self._from_array_like(v)
         if not self._parse_primitive:
             return v
