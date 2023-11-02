@@ -128,6 +128,7 @@ def stringify(
         charset: str = 'utf-8',
         # TODO implement filter to be callable
         filter: list = None,
+        charset_sentinel: bool = False,
 ) -> str:
     """
     Process a dictionary into a query string
@@ -157,6 +158,8 @@ def stringify(
         array_format=array_format
     )
     _qt = qs.stringify(data, filter=filter)
+    if charset_sentinel:
+        _qt.insert(0, ('utf8', '✓'))
     if sort:
         _qt = sorted(_qt, key=lambda x: x[0], reverse=sort_reverse)
     if encode:

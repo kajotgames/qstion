@@ -119,11 +119,13 @@ class ParserTest(unittest.TestCase):
 
         # NOTE passing functions as filter is not available, use list as value
         self.assertEqual(
-            qs.stringify({'a': 'b', 'c': 'd', 'e': 'f'}, filter=['a', 'e'], encode=False),
+            qs.stringify({'a': 'b', 'c': 'd', 'e': 'f'},
+                         filter=['a', 'e'], encode=False),
             'a=b&e=f')
 
         self.assertEqual(
-            qs.stringify({'a': ['b', 'c', 'd'], 'e': 'f'}, filter=['a', 0, 2], encode=False),
+            qs.stringify({'a': ['b', 'c', 'd'], 'e': 'f'},
+                         filter=['a', 0, 2], encode=False),
             'a[0]=b&a[2]=d')
 
         # If you're communicating with legacy systems, you can switch to iso-8859-1 using the charset option:
@@ -131,9 +133,25 @@ class ParserTest(unittest.TestCase):
             qs.stringify({'æ': 'æ'}, charset='iso-8859-1'),
             '%E6=%E6')
 
+        # Characters that don't exist in iso-8859-1 will be converted to numeric entities, similar to what browsers do:
+
         self.assertEqual(
             qs.stringify({'a': '☺'}, charset='iso-8859-1'),
-            'a=%26%2326150%3B')
+            'a=%26%239786%3B')
+
+        # You can use the charsetSentinel option to announce the character by including an utf8=✓ parameter with the proper encoding if the checkmark
+
+        self.assertEqual(
+            qs.stringify({'a': '☺'}, charset_sentinel=True),
+            'utf8=%E2%9C%93&a=%E2%98%BA')
+
+        self.assertEqual(
+            qs.stringify({'a': 'æ'}, charset='iso-8859-1',
+                         charset_sentinel=True),
+            'utf8=%26%2310003%3B&a=%E6'
+        )
+
+        # Dealing with special character sets : visit https://docs.python.org/3/library/codecs.html#standard-encodings
 
 
 if __name__ == "__main__":

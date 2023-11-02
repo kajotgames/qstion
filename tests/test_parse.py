@@ -11,10 +11,6 @@ class ParserTest(unittest.TestCase):
         obj = qs.parse('a=c')
         self.assertDictEqual(obj, {'a': 'c'})
 
-        # TODO not yet implemented
-        # stringified = qs.stringify(obj)
-        # self.assertEqual(stringified, 'a=c')
-
         self.assertDictEqual(qs.parse('foo[bar]=baz'), {'foo': {'bar': 'baz'}})
 
         # plain objects not supported -> unknown data type
@@ -75,18 +71,20 @@ class ParserTest(unittest.TestCase):
             {'a': '§'})
 
         # Some services add an initial utf8=✓ value to forms so that old Internet Explorer versions are more likely to submit the form as utf-8.
-        # qs supports this mechanism via the charsetSentinel option. 
-        # If specified, the utf8 parameter will be omitted from the returned object. 
+        # qs supports this mechanism via the charsetSentinel option.
+        # If specified, the utf8 parameter will be omitted from the returned object.
         # It will be used to switch to iso-8859-1/utf-8 mode depending on how the checkmark is encoded.
         # Important: When you specify both the charset option and the charsetSentinel option,
-        #  the charset will be overridden when the request contains a utf8 parameter from which the actual charset can be deduced. 
+        #  the charset will be overridden when the request contains a utf8 parameter from which the actual charset can be deduced.
         # In that sense the charset will behave as the default charset rather than the authoritative charset.\
         self.assertDictEqual(
-            qs.parse('utf8=%E2%9C%93&a=%C3%B8', charset_sentinel=True, charset='iso-8859-1'),
+            qs.parse('utf8=%E2%9C%93&a=%C3%B8',
+                     charset_sentinel=True, charset='iso-8859-1'),
             {'a': 'ø'})
-        
+
         self.assertDictEqual(
-            qs.parse('utf8=%26%2310003%3B&a=%F8', charset_sentinel=True, charset='utf-8'),
+            qs.parse('utf8=%26%2310003%3B&a=%F8',
+                     charset_sentinel=True, charset='utf-8'),
             {'a': 'ø'})
 
         # interpretNumericEntities &#...; syntax to the actual character
@@ -162,8 +160,8 @@ class ParserTest(unittest.TestCase):
         # with indexes in sparse order
         # NOTE that order is not important in python dictionary
         self.assertDictEqual(
-            qs.parse('a[1]=c&a[3]=b', parse_arrays=True),
-            {'a': {1: 'c', 3: 'b'}})
+            qs.parse('a[1]=b&a[15]=c', parse_arrays=True),
+            {'a': {1: 'b', 15: 'c'}})
 
         # sparse arrays such as [,,a,b] are not supported
 

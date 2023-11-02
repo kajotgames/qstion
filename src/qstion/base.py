@@ -262,4 +262,4 @@ class QS:
 
     @staticmethod
     def _q(key: str, value: str, charset: str = 'utf-8') -> str:
-        return f'{up.quote(key, encoding=charset)}={up.quote(value, encoding=charset)}'
+        return f'{up.quote(key, encoding=charset, errors="xmlcharrefreplace")}={up.quote(value, encoding=charset, errors="xmlcharrefreplace")}'
