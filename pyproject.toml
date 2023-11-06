@@ -10,7 +10,7 @@ authors = [
 ]
 description = "Simple package for parsing querystrings into nested dictionaries and vice versa."
 readme = "README.md"
-license = "BSD-3-Clause"
+license =  { text = "BSD-3-Clause" }
 requires-python = ">=3.9"
 dependencies = []
 keywords = ["querystring", "query", "string", "url", "parse", "serialize", "deserialize", "nested", "dict", "dictionary", "qs", "qstion"]
