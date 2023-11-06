@@ -22,18 +22,7 @@ class QsStringifier(QS):
 
         Args:
             data (dict): dictionary to process
-            depth (int): max depth of nested objects
-            - e.g. depth=1 : {'a': {'b': 'c'}} -> a[b]=c
-            parameter_limit (int): max number of parameters to parse (in keyword count)
-            allow_dots (bool): allow dot notation
-            - e.g. {'a': {'b': 'c'}} -> a.b=c
-            allow_sparse (bool): allow sparse arrays
-            - e.g. {'a': [,'b',,'c']} -> a[1]=b&a[5]=c
-            array_limit (int): max number of elements in array
-            if limit is reached, array is converted to object
-            parse_arrays (bool): parse array values as or keep object notation
-            comma (bool): allow comma separated values
-            - e.g. {'a': ['b', 'c']} -> a=b,c
+            filter (list): list of keys to filter
 
         Returns:    
             str: query string
@@ -65,6 +54,15 @@ class QsStringifier(QS):
         return res
 
     def _format_key(self, key: list) -> str | None:
+        """
+        Format key based on array_format into proper string representation recursively
+
+        Args:
+            key (list): list of keys
+
+        Returns:
+            str: formatted key
+        """
         if len(key) == 1:
             # decide based on array_format
             k = key[0]
@@ -89,6 +87,15 @@ class QsStringifier(QS):
             return f'[{current_key}]{formatted}'
 
     def _get_arg(self, node: QsNode) -> tuple[str, t.Any]:
+        """
+        Get argument from node recursively as generator
+
+        Args:
+            node (QsNode): node to process
+
+        Returns:
+            tuple[str, Any]: argument
+        """
         if node.is_leaf():
             if node.is_empty():
                 yield None
@@ -102,6 +109,15 @@ class QsStringifier(QS):
                     yield arg if arg is None else ([*arg[0], node.key], arg[1])
 
     def _transform_arg(self, arg: tuple[list, t.Any]) -> tuple[str, t.Any]:
+        """
+        Transform argument into proper string format
+
+        Args:
+            arg (tuple[list, Any]): argument
+
+        Returns:
+            tuple[str, Any]: transformed argument
+        """
         notation, value = arg
         if len(notation) == 1:
             return (notation[0], value)
@@ -132,19 +148,16 @@ def stringify(
 
     Args:
         data (dict): dictionary to process
-        depth (int): max depth of nested objects
-        - e.g. depth=1 : {'a': {'b': 'c'}} -> a[b]=c
-        parameter_limit (int): max number of parameters to parse (in keyword count)
-        allow_dots (bool): allow dot notation
-        - e.g. {'a': {'b': 'c'}} -> a.b=c
-        allow_sparse (bool): allow sparse arrays
-        - e.g. {'a': [,'b',,'c']} -> a[1]=b&a[5]=c
-        array_limit (int): max number of elements in array
-        if limit is reached, array is converted to object
-        parse_arrays (bool): parse array values as or keep object notation
-        comma (bool): allow comma separated values
-        - e.g. {'a': ['b', 'c']} -> a=b,c
-        encode (bool): encode query string
+        allow_dots (bool): use dot notation instead of brackets
+        encode (bool): encode values and keys
+        delimiter (str): delimiter to use
+        encode_values_only (bool): encode only values
+        array_format (str): array format to use
+        sort (bool): sort query string
+        sort_reverse (bool): sort query string in reverse
+        charset (str): charset to use
+        filter (list): list of keys to filter
+        charset_sentinel (bool): add utf8 sentinel
 
     Returns:    
         str: query string

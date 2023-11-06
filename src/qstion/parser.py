@@ -412,8 +412,20 @@ def parse(
 
     Args:
         data (str): string to parse
-        from_url (bool): if True, parses url
-        **kw: keyword arguments for QsParser
+        from_url (bool): if True, data is parsed from url
+        delimiter (str): delimiter to use
+        depth (int): max depth of nested objects
+        parameter_limit (int): max number of parameters
+        allow_dots (bool): allow dot notation
+        array_limit (int): max number of elements in array
+        parse_arrays (bool): parse arrays
+        allow_empty (bool): allow empty keys and values
+        charset (str): charset to use
+        charset_sentinel (bool): if True, charset is parsed from data if charset sentinel is found
+        interpret_numeric_entities (bool): if True, numeric entities are interpreted into unicode characters
+        parse_primitive (bool): if True, primitive values are parsed into proper types
+        primitive_strict (bool): if True, primitive values are parsed into proper types strictly (affects bool and nonetype)
+        comma (bool): if True, comma is used as delimiter
 
     Returns:
         dict: parsed data

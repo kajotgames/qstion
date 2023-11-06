@@ -1,4 +1,3 @@
-# Parser errors
 import typing as t
 from html import unescape as unescape_html
 import urllib.parse as up
