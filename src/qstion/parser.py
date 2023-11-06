@@ -4,7 +4,6 @@ import re
 from .base import QS, Unparsable, UnbalancedBrackets, QsNode, EmptyKey, ArrayLimitReached
 from html import unescape as unescape_html
 
-#TODO test combo of delimiter being comma and parsing comma separated values
 
 t_Delimiter = t.Union[str, t.Pattern[str]]
 
@@ -148,22 +147,24 @@ class LHSParse:
 
 class QsParser(QS):
     _parse_primitive: bool = False
+    _primitive_strict: bool = True
 
     def __init__(
             self,
             depth: int = 5,
             parameter_limit: int = 1000,
             allow_dots: bool = False,
-            allow_sparse: bool = False,
             array_limit: int = 20,
             parse_arrays: bool = False,
             allow_empty: bool = False,
             comma: bool = False,
-            parse_primitive: bool = False
+            parse_primitive: bool = False,
+            primitive_strict: bool = True
     ):
         super().__init__(depth, parameter_limit, allow_dots,
-                         allow_sparse, array_limit, parse_arrays, allow_empty, comma)
+                         array_limit, parse_arrays, allow_empty, comma)
         self._parse_primitive = parse_primitive
+        self._primitive_strict = primitive_strict
 
     def parse(self, args: list[tuple]):
         """
@@ -331,12 +332,16 @@ class QsParser(QS):
             return [self._process_primitive(item) for item in v]
         if v.isdigit():
             return int(v)
-        # TODO: decide whether accept case insensitive booleans
-        if v.lower() in ['true', 'false']:
-            return v.lower() == 'true'
-        # TODO: decide whether accept case insensitive nulls
-        if v.lower() in ['null', 'none']:
-            return None
+        if not self._primitive_strict:
+            if v.lower() in ['true', 'false']:
+                return v.lower() == 'true'
+            if v.lower() in ['null', 'none']:
+                return None
+        else:
+            if v in ['true', 'false']:
+                return v == 'true'
+            if v in ['null', 'None']:
+                return None
         try:
             return float(v)
         except ValueError:
@@ -393,7 +398,6 @@ def parse(
         depth: int = 5,
         parameter_limit: int = 1000,
         allow_dots: bool = False,
-        allow_sparse: bool = False,
         array_limit: int = 20,
         parse_arrays: bool = False,
         allow_empty: bool = False,
@@ -401,6 +405,7 @@ def parse(
         charset_sentinel: bool = False,
         interpret_numeric_entities: bool = False,
         parse_primitive: bool = False,
+        primitive_strict: bool = True,
         comma: bool = False):
     """
     Parses a string into a dictionary.
@@ -426,7 +431,7 @@ def parse(
             args.append(QsParser._unq(
                 arg, charset, interpret_numeric_entities))
         parser = QsParser(depth, parameter_limit, allow_dots,
-                          allow_sparse, array_limit, parse_arrays, allow_empty, comma, parse_primitive)
+                          array_limit, parse_arrays, allow_empty, comma, parse_primitive, primitive_strict)
         parser.parse(args)
         return parser.args
     except (Unparsable, UnbalancedBrackets):
@@ -435,7 +440,3 @@ def parse(
             keep_blank_values=allow_empty,
             max_num_fields=parameter_limit,
             separator=delimiter)
-
-
-if __name__ == "__main__":
-    item = parse('a=[b,c]')

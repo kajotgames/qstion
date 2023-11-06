@@ -153,6 +153,20 @@ class ParserTest(unittest.TestCase):
 
         # Dealing with special character sets : visit https://docs.python.org/3/library/codecs.html#standard-encodings
 
+        # array format as brackets for array with shifted index
+        self.assertEqual(
+            qs.stringify({'a': {1: 'b', 2: 'c'}},
+                         array_format='brackets', encode=False),
+            'a[]=b&a[]=c'
+        )
+
+        # use comma as delimiter
+        self.assertEqual(
+            qs.stringify({'a': {1: 'b', 2: 'c'}},
+                         array_format='comma', encode=False),
+            'a=b,c'
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -268,7 +268,6 @@ class QS:
     _depth: int = 5
     _parameter_limit: int = 1000
     _allow_dots: bool = False
-    _allow_sparse: bool = False
     _array_limit: int = 20
     _parse_arrays: bool = False
     _allow_empty: bool = False
@@ -279,7 +278,6 @@ class QS:
             depth: int = 5,
             parameter_limit: int = 1000,
             allow_dots: bool = False,
-            allow_sparse: bool = False,
             array_limit: int = 20,
             parse_arrays: bool = False,
             allow_empty: bool = False,
@@ -306,7 +304,6 @@ class QS:
         self._max_depth = depth
         self._parameter_limit = parameter_limit
         self._allow_dots = allow_dots
-        self._allow_sparse = allow_sparse
         self._array_limit = array_limit
         self._parse_arrays = parse_arrays
         self._allow_empty = allow_empty

@@ -10,7 +10,7 @@ class QsStringifier(QS):
 
     def __init__(self, depth: int = 5, parameter_limit: int = 1000, allow_dots: bool = False, allow_sparse: bool = False, array_limit: int = 20, parse_arrays: bool = False, allow_empty: bool = False, comma: bool = False, array_format: str = 'indices'):
         super().__init__(depth, parameter_limit, allow_dots,
-                         allow_sparse, array_limit, parse_arrays, allow_empty, comma)
+                         array_limit, parse_arrays, allow_empty, comma)
         if array_format not in LIST_FORMAT_OPTIONS:
             raise ValueError(
                 f'array_format must be one of {LIST_FORMAT_OPTIONS}')
@@ -117,7 +117,6 @@ class QsStringifier(QS):
 def stringify(
         data: dict,
         allow_dots: bool = False,
-        allow_empty: bool = False,
         encode: bool = True,
         delimiter: str = '&',
         encode_values_only: bool = False,
@@ -125,7 +124,6 @@ def stringify(
         sort: bool = False,
         sort_reverse: bool = False,
         charset: str = 'utf-8',
-        # TODO implement filter to be callable
         filter: list = None,
         charset_sentinel: bool = False,
 ) -> str:
@@ -153,7 +151,6 @@ def stringify(
     """
     qs = QsStringifier(
         allow_dots=allow_dots,
-        allow_empty=allow_empty,
         array_format=array_format
     )
     _qt = qs.stringify(data, filter=filter)
@@ -164,5 +161,5 @@ def stringify(
     if encode:
         return delimiter.join([qs._q(k, v, charset=charset) for k, v in _qt])
     elif encode_values_only:
-        return delimiter.join([f'{k}={up.quote(v, encoding=charset)}' for k, v in _qt])
+        return delimiter.join([f'{k}={up.quote(v, encoding=charset, errors="xmlcharrefreplace")}' for k, v in _qt])
     return delimiter.join([f'{k}={v}' for k, v in _qt])

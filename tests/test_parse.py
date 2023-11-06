@@ -138,6 +138,18 @@ class ParserTest(unittest.TestCase):
             qs.parse('a=[b,c]'),
             {'a': ['b', 'c']})
 
+        # test very empty objects
+        self.assertDictEqual(
+            qs.parse('a[]=&b[]=', allow_empty=True),
+            {'a': {'': ''}, 'b': {'': ''}})
+
+        # test charset sentinel arg, but not as leading arg
+        self.assertDictEqual(
+            qs.parse('a=%A7&utf8=%26%2310003',
+                     charset='utf-8', charset_sentinel=True),
+            {'a': '§'}
+        )
+
     def test_basic_parse_arrays(self):
         import src.qstion as qs
         # NOTE
@@ -260,8 +272,8 @@ class ParserTest(unittest.TestCase):
 
         # with allowed primitive values, parsed should be None
         self.assertDictEqual(
-            qs.parse('a=null&b=NULL&c=Null&d=None', parse_primitive=True),
-            {'a': None, 'b': None, 'c': None, 'd': None})
+            qs.parse('a=null&b=None', parse_primitive=True),
+            {'a': None, 'b': None})
 
         # test array of primitive values
         self.assertDictEqual(
@@ -291,8 +303,19 @@ class ParserTest(unittest.TestCase):
 
         # with allowed primitive values, parsed should be array of primitives with mixed types
         self.assertDictEqual(
-            qs.parse('a=[1,a,true,Null]', parse_primitive=True),
+            qs.parse('a=[1,a,true,null]', parse_primitive=True),
             {'a': [1, 'a', True, None]})
+
+        # test primitive values with non-strict keywords for bool and null
+        self.assertDictEqual(
+            qs.parse('a=True&b=False&c=none', parse_primitive=True),
+            {'a': 'True', 'b': 'False', 'c': 'none'})
+
+        # test primitive values with non-strict option
+        self.assertDictEqual(
+            qs.parse('a=True&b=False&c=NULL',
+                     parse_primitive=True, primitive_strict=False),
+            {'a': True, 'b': False, 'c': None})
 
 
 if __name__ == '__main__':
