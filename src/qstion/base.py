@@ -95,17 +95,6 @@ class QsNode:
         except KeyError:
             return default
 
-    def __setitem__(self, key: str, value: t.Any):
-        """
-        Overload [] operator to set child by key
-        """
-        for child in self.children:
-            if child.key == key:
-                child.value = value
-                return
-        self.children.append(QsNode(key, value))
-        self.reorder()
-
     def __contains__(self, key: str):
         """
         Overload in operator to check if child exists
@@ -145,9 +134,8 @@ class QsNode:
         """
         Used to determine the next index for a new array item
         """
-        if self.is_array():
-            return max([child.key for child in self.children])
-        return -1
+        # method is only called within _parse_array method but this is security measure
+        return max([child.key for child in self.children]) if self.is_array() else -1
 
     def to_object_notation(self):
         """
@@ -191,11 +179,8 @@ class QsNode:
                     self.children.append(child)
             self.reorder()
         elif not self.is_leaf() and other.is_leaf():
-            if other.key in self:
-                self[other.key].update(other)
-            else:
-                self.children.append(QsNode(other.value, True))
-                self.reorder()
+            self.children.append(QsNode(other.value, True))
+            self.reorder()
         else:
             for child in other.children:
                 if child.key in self:

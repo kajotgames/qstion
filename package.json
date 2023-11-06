@@ -1,0 +1,12 @@
+{
+    "name": "qstion",
+    "version": "0.0.1",
+    "description": "Query string parser and stringifier for python",
+    "repository": "kajotgames/qstion",
+    "keywords": [
+        "query", "querystring", "parser"
+    ],
+    "author": "Nemulo",
+    "license": "BSD-3-Clause",
+    "dependencies": {}
+}

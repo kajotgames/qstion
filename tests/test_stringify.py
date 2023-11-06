@@ -3,7 +3,7 @@ import sys
 sys.path.append(".")
 
 
-class ParserTest(unittest.TestCase):
+class StringifyTest(unittest.TestCase):
 
     def test_basic_stringify_objects(self):
         import src.qstion as qs
@@ -165,6 +165,37 @@ class ParserTest(unittest.TestCase):
             qs.stringify({'a': {1: 'b', 2: 'c'}},
                          array_format='comma', encode=False),
             'a=b,c'
+        )
+
+        # test unkown options for array_format
+        self.assertRaises(ValueError, qs.stringify,
+                          {'a': {1: 'b', 2: 'c'}}, array_format='unknown')
+
+        # test bracket notation on basic object
+        self.assertEqual(
+            qs.stringify({'a': {'b': 'c'}},
+                         array_format='brackets', encode=False),
+            'a[b]=c'
+        )
+
+        # test bracket notation on deeper nesting
+        self.assertEqual(
+            qs.stringify({'a': {'b': {'c': 'd'}}},
+                         array_format='brackets', encode=False),
+            'a[b][c]=d'
+        )
+
+        # use comma delimiter in nested objects
+        self.assertEqual(
+            qs.stringify({'a': {'b': ['c', 'd']}},
+                         array_format='comma', encode=False),
+            'a[b]=c,d'
+        )
+
+        # use repeat on nested objects
+        self.assertEqual(
+            qs.stringify({'a': {'b': {1: 'c',2: 'd'}}}, array_format='repeat', encode=False),
+            'a[b]=c&a[b]=d'
         )
 
 

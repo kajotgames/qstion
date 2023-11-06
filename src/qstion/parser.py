@@ -118,8 +118,6 @@ class LHSParse:
         if not notation:
             return val
         current = notation[0]
-        if current == '' and not cls._allow_empty:
-            raise EmptyKey('Empty key not allowed')
         if cls._depth < 0:
             # join current and rest of notation
             current_key = cls._max_depth_key(notation)
@@ -307,7 +305,7 @@ class QsParser(QS):
         if notation is None:
             raise Unparsable('Unable to parse key')
         data = LHSParse.process(
-            notation, v, depth=self._max_depth, allow_empty=self._allow_empty)
+            notation, v, depth=self._max_depth, allow_empty=self._allow_empty, allow_dots=self._allow_dots)
         if data.key not in self._qs_tree:
             if len(self._qs_tree) >= self._parameter_limit:
                 return

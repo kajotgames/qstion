@@ -66,17 +66,11 @@ class QsStringifier(QS):
         if len(key) == 1:
             # decide based on array_format
             k = key[0]
-            match self._af:
-                case 'indices':
-                    return f'[{k}]' if not self._allow_dots else k
-                case 'brackets':
-                    if isinstance(k, int):
-                        return f'[]'
-                    return f'[{k}]'
-                case 'repeat':
-                    return None
-                case 'comma':
-                    return None
+            k = key[0]
+            if isinstance(k, int) and (self._af == 'repeat' or self._af == 'brackets'):
+                return '[]' if self._af == 'brackets' else None
+            else:
+                return f'[{k}]' if not self._allow_dots else k
         else:
             current_key = key.pop()
             formatted = self._format_key(key)

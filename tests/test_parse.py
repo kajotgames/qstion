@@ -93,6 +93,17 @@ class ParserTest(unittest.TestCase):
 
     def test_advanced_parse_objects(self):
         import src.qstion as qs
+
+        # test parse from url
+        self.assertDictEqual(
+            qs.parse('http://example.com/?a=b', from_url=True),
+            {'a': 'b'})
+
+        # test unparsable qs
+        self.assertDictEqual(
+            qs.parse('this_is_unparsable'),
+            {})
+
         # two separate nested objects
         self.assertDictEqual(
             qs.parse('a[b]=c&d[e]=f'),
@@ -149,6 +160,61 @@ class ParserTest(unittest.TestCase):
                      charset='utf-8', charset_sentinel=True),
             {'a': '§'}
         )
+
+        # Special case : nesting to non-nested argument
+        # NOTE: assuming that querystring 'a[b]=c&a[b][d]=e' parses into
+        # {'a': {'b': {'d': 'e', 'c': True}}}
+        # Handling of 'overloading' argument in such way: 'a[b]=c&a[b][c]=d'
+        # will result in combining both True and 'd' into array
+        self.assertDictEqual(
+            qs.parse('a[b]=c&a[b][c]=d'),
+            {'a': {'b': {'c': [True, 'd']}}})
+
+        # test not allowing empty keys
+        self.assertDictEqual(
+            qs.parse('a[]=b&a[]=c&'),
+            {'a[]': ['b', 'c']})
+
+        # test dot notation with max depth
+        self.assertDictEqual(
+            qs.parse('a.b.c.d=e', allow_dots=True, depth=1),
+            {'a': {'b': {'c.d': 'e'}}})
+
+        # test exact depth
+        self.assertDictEqual(
+            qs.parse('a.b.c.d=e', allow_dots=True, depth=2),
+            {'a': {'b': {'c': {'d': 'e'}}}})
+
+        # test charset_sentinel option without utf8 present
+        self.assertDictEqual(
+            qs.parse('a=%A7', charset_sentinel=True, charset='iso-8859-1'),
+            {'a': '§'})
+
+        # test charset_sentinel option with utf8 present and '✓' encoded in unkown charset
+        self.assertDictEqual(
+            qs.parse('utf8=%2BJxM-&a=b', charset_sentinel=True),
+            {'a': ['b'], 'utf8': ['+JxM-']}
+        )
+
+        # test unbalanced brackets - and thus unparsable by qstion
+        self.assertDictEqual(
+            qs.parse('a[b=c'),
+            {'a[b': ['c']})
+
+        # test balanced but nested brackets
+        self.assertDictEqual(
+            qs.parse('a[b[c]]=d'),
+            {'a[b[c]]': ['d']})
+
+        # test only closing brackets
+        self.assertDictEqual(
+            qs.parse('a[b]]]=d'),
+            {'a[b]]]': ['d']})
+
+        # test correct brackets but broken nested notation
+        self.assertDictEqual(
+            qs.parse('a[b][c]d=e'),
+            {'a[b][c]d': ['e']})
 
     def test_basic_parse_arrays(self):
         import src.qstion as qs
@@ -222,6 +288,22 @@ class ParserTest(unittest.TestCase):
         self.assertDictEqual(
             qs.parse('a=b,c', comma=True),
             {'a': ['b', 'c']})
+
+        # test double initialization of array with second index
+        self.assertDictEqual(
+            qs.parse('a[][1]=c', parse_arrays=True),
+            {'a': {1: 'c'}})
+
+        # test array notation on non array arguments
+        self.assertDictEqual(
+            qs.parse('a=c', parse_arrays=True),
+            {'a': 'c'})
+
+        # test over parameter limit in array notation
+        self.assertDictEqual(
+            qs.parse('a[0]=b&a[1]=c&b[]=x',
+                     parameter_limit=1, parse_arrays=True),
+            {'a': {0: 'b', 1: 'c'}})
 
     def test_basic_primitive_values(self):
         import src.qstion as qs
