@@ -156,7 +156,7 @@ assert qs.parse('a=1,2,3', comma=True, parse_primitive=True) == {'a': [1, 2, 3]}
 
 **qstion** (as well as **qs** in js) allows you to stringify objects into querystring.
     
-```
+```python
 import qstion as qs
 
 assert qs.stringify({'a': 'b'}) == 'a=b'
