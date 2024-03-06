@@ -388,6 +388,7 @@ class QsParser(QS):
         for v in self._qs_tree.values():
             v.to_object_notation()
 
+
 def unpack_payload(payload: str | bytes) -> str:
     """
     Unpacks payload from bytes to string.
@@ -401,6 +402,31 @@ def unpack_payload(payload: str | bytes) -> str:
     if isinstance(payload, bytes):
         return payload.decode('utf-8')
     return payload
+
+
+def parse_from_dict(
+    data: dict[str, str],
+    **kw,
+):
+    """
+    Parses a filter from dictionary (args).
+
+    Args:
+        data (dict): dictionary to parse
+        **kw: keyword arguments - for parser class
+    """
+    try:
+        parser = QsParser(**kw)
+        parser.parse(data.items())
+        return parser.args
+    except (Unparsable, UnbalancedBrackets):
+        return up.parse_qs(
+            up.urlencode(data),
+            keep_blank_values=kw.get('allow_empty', False),
+            max_num_fields=kw.get('parameter_limit', 1000),
+            separator=kw.get('delimiter', '&')
+        )
+
 
 def parse(
         data: str | bytes,
