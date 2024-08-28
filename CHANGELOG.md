@@ -5,6 +5,11 @@ All notable changes to [qstion](https://github.com/kajotgames/qstion) project wi
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2024-01-02
+
+- version 1.0.0 released - first stable version
+- fixed behavior of parsing when incoming data are `bytes` and delimiter is `str` (type incompatibility for regex module)
+
 ## [0.0.1] - 2023-11-06
 
 - project created

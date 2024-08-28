@@ -399,6 +399,19 @@ class ParserTest(unittest.TestCase):
                      parse_primitive=True, primitive_strict=False),
             {'a': True, 'b': False, 'c': None})
 
+    def test_parsing_from_dict(self):
+
+        # test parsing from dictionary
+        import src.qstion as qs
+        self.assertDictEqual(
+            qs.parse_from_dict({'a': 'b'}),
+            {'a': 'b'})
+
+        # test nested dictionary
+        self.assertDictEqual(
+            qs.parse_from_dict({'a[b]': 'c'}),
+            {'a': {'b': 'c'}})
+
 
 if __name__ == '__main__':
     unittest.main()
