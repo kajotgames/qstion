@@ -5,21 +5,25 @@ import urllib.parse as up
 
 class Unparsable(Exception):
     """Exception raised when query string cannot be parsed with QsParser"""
+
     pass
 
 
 class ArrayLimitReached(Exception):
     """Exception raised when array limit is reached while parsing query string"""
+
     pass
 
 
 class UnbalancedBrackets(Exception):
     """Exception raised when query string contains unbalanced brackets"""
+
     pass
 
 
 class EmptyKey(Exception):
     """Exception raised when query string contains empty key and is not allowed"""
+
     pass
 
 
@@ -27,8 +31,9 @@ class QsNode:
     """
     Data structure to represent a query string as a tree for better manipulation of arrays and objects
     """
+
     key: str | int
-    children: list['QsNode']
+    children: list["QsNode"]
     value: t.Any
 
     def __init__(self, key: str | int, value: t.Any):
@@ -42,12 +47,7 @@ class QsNode:
             self.children = []
 
     @classmethod
-    def load(
-        cls,
-        parent_key: str | int,
-        data: t.Any,
-        filter: list = None
-    ) -> 'QsNode':
+    def load(cls, parent_key: str | int, data: t.Any, filter: list = None) -> "QsNode":
         """
         Load a dictionary into a QsNode recursively
 
@@ -139,7 +139,7 @@ class QsNode:
 
     def to_object_notation(self):
         """
-        Transform self from possible array notation to default object notation - all integer indexes are replaced with 
+        Transform self from possible array notation to default object notation - all integer indexes are replaced with
         their string representation
         """
         if isinstance(self.key, int):
@@ -157,7 +157,7 @@ class QsNode:
             for child in self.children:
                 child.reorder()
 
-    def update(self, other: 'QsNode'):
+    def update(self, other: "QsNode"):
         """
         Recursively update self with other node
 
@@ -189,7 +189,7 @@ class QsNode:
                     self.children.append(child)
             self.reorder()
 
-    def merge_value(self, other: 'QsNode'):
+    def merge_value(self, other: "QsNode"):
         """
         Merge values of two nodes
 
@@ -213,7 +213,7 @@ class QsNode:
             return self.value
         return {child.key: child.serialize() for child in self.children}
 
-    def set_index(self, base: 'QsNode', array_limit: int = 20):
+    def set_index(self, base: "QsNode", array_limit: int = 20):
         """
         Set index of self and children recursively
         If base is provided, it is used to match children by key
@@ -233,7 +233,7 @@ class QsNode:
             if child.key is None:
                 child.key = base.max_index() + 1 if base else 0
             if child.has_int_key() and child.key > array_limit:
-                raise ArrayLimitReached('Array limit reached')
+                raise ArrayLimitReached("Array limit reached")
 
     def is_empty(self):
         """
@@ -242,11 +242,81 @@ class QsNode:
         return self.is_leaf() and self.value is None
 
 
+class QSRoot:
+    """
+    Base class for query string parser and stringifier - preserves order of children
+    """
+
+    child_nodes: list[QsNode]
+
+    def __init__(self):
+        self.child_nodes = []
+
+    def __getitem__(self, key: str) -> QsNode:
+        """
+        Overload [] operator to get child by key
+        """
+        for child in self.child_nodes:
+            if child.key == key:
+                return child
+        raise KeyError(key)
+
+    def get(self, key: str, default: t.Any = None):
+        """
+        Method to get child by key with default value - behaves like dict.get
+        """
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def values(self):
+        """
+        Get values of all children
+        """
+        return [child.value for child in self.child_nodes]
+
+    def __contains__(self, key: str):
+        """
+        Overload in operator to check if child exists
+        """
+        return key in [child.key for child in self.child_nodes]
+
+    def __setitem__(self, key: str, value: t.Any):
+        """
+        Overload [] operator to set child by key
+        """
+        for child in self.child_nodes:
+            if child.key == key:
+                child.value = value
+                return
+        self.child_nodes.append(value)
+
+    def __delitem__(self, key: str):
+        """
+        Overload del operator to delete child by key
+        """
+        del self.child_nodes[key]
+
+    def __iter__(self):
+        """
+        Overload iter operator to iterate over children
+        """
+        return iter(self.child_nodes)
+
+    def __len__(self):
+        """
+        Overload len operator to get number of children
+        """
+        return len(self.child_nodes)
+
+
 class QS:
     """
     Base class for query string parser and stringifier
     """
-    _qs_tree: dict[str, QsNode]
+
+    _root_node: QSRoot
 
     _depth: int = 5
     _depth: int = 5
@@ -258,14 +328,14 @@ class QS:
     _comma: bool = False
 
     def __init__(
-            self,
-            depth: int = 5,
-            parameter_limit: int = 1000,
-            allow_dots: bool = False,
-            array_limit: int = 20,
-            parse_arrays: bool = False,
-            allow_empty: bool = False,
-            comma: bool = False,
+        self,
+        depth: int = 5,
+        parameter_limit: int = 1000,
+        allow_dots: bool = False,
+        array_limit: int = 20,
+        parse_arrays: bool = False,
+        allow_empty: bool = False,
+        comma: bool = False,
     ):
         """
         Args:
@@ -284,7 +354,7 @@ class QS:
             comma (bool): allow comma separated values
             - e.g. a=b,c -> {'a': ['b', 'c']}
         """
-        self._qs_tree = {}
+        self._root_node = QSRoot()
         self._max_depth = depth
         self._parameter_limit = parameter_limit
         self._allow_dots = allow_dots
@@ -294,7 +364,7 @@ class QS:
         self._comma = comma
 
     @staticmethod
-    def _unq(arg: str, charset: str = 'utf-8', interpret_numeric_entities: bool = False) -> str:
+    def _unq(arg: str, charset: str = "utf-8", interpret_numeric_entities: bool = False) -> str:
         """
         Unquotes a string (removes url encoding).
 
@@ -307,15 +377,15 @@ class QS:
             str: unquoted string
         """
         try:
-            arg_key, arg_val = arg.split('=')
+            arg_key, arg_val = arg.split("=")
         except ValueError:
-            raise Unparsable('Unable to parse key')
+            raise Unparsable("Unable to parse key")
         if interpret_numeric_entities:
             return (unescape_html(up.unquote(arg_key, charset)), unescape_html(up.unquote(arg_val, charset)))
         return (up.unquote(arg_key, charset), up.unquote(arg_val, charset))
 
     @staticmethod
-    def _q(key: str, value: str, charset: str = 'utf-8') -> str:
+    def _q(key: str, value: str, charset: str = "utf-8") -> str:
         """
         Encodes a string (url encoding).
 

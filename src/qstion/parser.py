@@ -12,6 +12,7 @@ class ArrayParse:
     """
     Parses array notation into a tree like structure.
     """
+
     _depth: int = 5
     _limit: int = 20
 
@@ -53,9 +54,9 @@ class ArrayParse:
         current = notation[0]
         if current.isdigit():
             if int(current) > cls._limit:
-                raise ArrayLimitReached('Array limit reached')
+                raise ArrayLimitReached("Array limit reached")
             return QsNode(int(current), cls.process_notation(notation[1:], val))
-        elif current == '':
+        elif current == "":
             res = cls.process_notation(notation[1:], val)
             if not isinstance(res, QsNode):
                 return QsNode(None, res)
@@ -78,12 +79,7 @@ class LHSParse:
 
     @classmethod
     def process(
-        cls,
-        notation: list,
-        val: str,
-        depth: int = 5,
-        allow_empty: bool = False,
-        allow_dots: bool = False
+        cls, notation: list, val: str, depth: int = 5, allow_empty: bool = False, allow_dots: bool = False
     ) -> QsNode:
         """
         Parses left hand side notation for single key-value pair.
@@ -128,7 +124,7 @@ class LHSParse:
     @classmethod
     def _max_depth_key(cls, notation: list[str]) -> str:
         """
-        Returns a key for max depth reached. 
+        Returns a key for max depth reached.
 
         Args:
             notation (list): list of remaining keys (in nested order)
@@ -148,19 +144,18 @@ class QsParser(QS):
     _primitive_strict: bool = True
 
     def __init__(
-            self,
-            depth: int = 5,
-            parameter_limit: int = 1000,
-            allow_dots: bool = False,
-            array_limit: int = 20,
-            parse_arrays: bool = False,
-            allow_empty: bool = False,
-            comma: bool = False,
-            parse_primitive: bool = False,
-            primitive_strict: bool = True
+        self,
+        depth: int = 5,
+        parameter_limit: int = 1000,
+        allow_dots: bool = False,
+        array_limit: int = 20,
+        parse_arrays: bool = False,
+        allow_empty: bool = False,
+        comma: bool = False,
+        parse_primitive: bool = False,
+        primitive_strict: bool = True,
     ):
-        super().__init__(depth, parameter_limit, allow_dots,
-                         array_limit, parse_arrays, allow_empty, comma)
+        super().__init__(depth, parameter_limit, allow_dots, array_limit, parse_arrays, allow_empty, comma)
         self._parse_primitive = parse_primitive
         self._primitive_strict = primitive_strict
 
@@ -175,7 +170,7 @@ class QsParser(QS):
             parse_func = self._parse_array if self._parse_arrays else self._parse_lhs
             k, v = arg
             if self._comma:
-                v = re.split(',', v)
+                v = re.split(",", v)
                 v = str(v[0]) if len(v) == 1 else v
             parse_func(k, v)
 
@@ -184,9 +179,7 @@ class QsParser(QS):
         """
         Returns nested dictionary as representation of argument tree.
         """
-        return {
-            k.key: k.serialize() for k in self._qs_tree.values()
-        }
+        return {k.key: k.serialize() for k in self._root_node}
 
     @staticmethod
     def _find_charset_sentinel(args: list[str]) -> str | None:
@@ -201,18 +194,18 @@ class QsParser(QS):
         """
         utf_idx = None
         for idx, arg in enumerate(args):
-            if arg.split('=')[0] == 'utf8':
+            if arg.split("=")[0] == "utf8":
                 utf_idx = idx
                 break
         if utf_idx is None:
             return None
-        val = args.pop(utf_idx).split('=')[1]
-        if up.unquote(val, encoding='utf-8') == '✓':
-            return 'utf-8'
-        elif unescape_html(up.unquote(val, encoding='iso-8859-1')) == '✓':
-            return 'iso-8859-1'
+        val = args.pop(utf_idx).split("=")[1]
+        if up.unquote(val, encoding="utf-8") == "✓":
+            return "utf-8"
+        elif unescape_html(up.unquote(val, encoding="iso-8859-1")) == "✓":
+            return "iso-8859-1"
         else:
-            raise Unparsable('Unable to parse charset sentinel')
+            raise Unparsable("Unable to parse charset sentinel")
 
     @staticmethod
     def _from_array_like(v: str | list) -> list | str:
@@ -226,9 +219,9 @@ class QsParser(QS):
             list: converted list
         """
 
-        if isinstance(v, str) and (v.startswith('[') and v.endswith(']')):
-            v = v.rstrip(']').lstrip('[')
-            return v.split(',')
+        if isinstance(v, str) and (v.startswith("[") and v.endswith("]")):
+            v = v.rstrip("]").lstrip("[")
+            return v.split(",")
         return v
 
     @staticmethod
@@ -243,20 +236,19 @@ class QsParser(QS):
             UnbalancedBrackets: if brackets are unbalanced
             Unparsable: if nesting notation is broken
         """
-        brackets = [char for char in k if char in '[]']
+        brackets = [char for char in k if char in "[]"]
         # check if brackets are balanced
         bracket_count = 0
         for bracket in brackets:
-            if bracket == '[' and bracket_count > 0:
-                raise UnbalancedBrackets(
-                    'Using brackets as key is not allowed')
-            if bracket == ']' and bracket_count == 0:
-                raise UnbalancedBrackets('Unbalanced brackets')
-            bracket_count += 1 if bracket == '[' else -1
+            if bracket == "[" and bracket_count > 0:
+                raise UnbalancedBrackets("Using brackets as key is not allowed")
+            if bracket == "]" and bracket_count == 0:
+                raise UnbalancedBrackets("Unbalanced brackets")
+            bracket_count += 1 if bracket == "[" else -1
         if bracket_count != 0:
-            raise UnbalancedBrackets('Unbalanced brackets')
-        if brackets and not k.endswith(']'):
-            raise Unparsable('Nesting notation broken')
+            raise UnbalancedBrackets("Unbalanced brackets")
+        if brackets and not k.endswith("]"):
+            raise Unparsable("Nesting notation broken")
 
     def _parse_array(self, k: str, v: str | list) -> None:
         """
@@ -273,24 +265,23 @@ class QsParser(QS):
             self._parse_arrays = False
             self._to_obj()
             return self._parse_lhs(k, v)
-        if re.match(r'[^\d]+', notation[1]):
+        if re.match(r"[^\d]+", notation[1]):
             self._parse_arrays = False
             self._to_obj()
             return self._parse_lhs(k, v)
         try:
             item = ArrayParse.process(notation, v)
-            item.set_index(self._qs_tree.get(item.key, None),
-                           array_limit=self._array_limit)
+            item.set_index(self._root_node.get(item.key, None), array_limit=self._array_limit)
         except ArrayLimitReached:
             self._parse_arrays = False
             self._to_obj()
             return self._parse_lhs(k, v)
-        if item.key not in self._qs_tree:
-            if len(self._qs_tree) >= self._parameter_limit:
+        if item.key not in self._root_node:
+            if len(self._root_node) >= self._parameter_limit:
                 return
-            self._qs_tree[item.key] = item
+            self._root_node[item.key] = item
         else:
-            self._qs_tree[item.key].update(item)
+            self._root_node[item.key].update(item)
 
     def _parse_lhs(self, k: str, v: str | list) -> None:
         """
@@ -303,15 +294,16 @@ class QsParser(QS):
         v = self._process_primitive(v)
         notation = self._split_key(k)
         if notation is None:
-            raise Unparsable('Unable to parse key')
+            raise Unparsable("Unable to parse key")
         data = LHSParse.process(
-            notation, v, depth=self._max_depth, allow_empty=self._allow_empty, allow_dots=self._allow_dots)
-        if data.key not in self._qs_tree:
-            if len(self._qs_tree) >= self._parameter_limit:
+            notation, v, depth=self._max_depth, allow_empty=self._allow_empty, allow_dots=self._allow_dots
+        )
+        if data.key not in self._root_node:
+            if len(self._root_node) >= self._parameter_limit:
                 return
-            self._qs_tree[data.key] = data
+            self._root_node[data.key] = data
         else:
-            self._qs_tree[data.key].update(data)
+            self._root_node[data.key].update(data)
 
     def _process_primitive(self, v: str | list) -> t.Any:
         """
@@ -331,14 +323,14 @@ class QsParser(QS):
         if v.isdigit():
             return int(v)
         if not self._primitive_strict:
-            if v.lower() in ['true', 'false']:
-                return v.lower() == 'true'
-            if v.lower() in ['null', 'none']:
+            if v.lower() in ["true", "false"]:
+                return v.lower() == "true"
+            if v.lower() in ["null", "none"]:
                 return None
         else:
-            if v in ['true', 'false']:
-                return v == 'true'
-            if v in ['null', 'None']:
+            if v in ["true", "false"]:
+                return v == "true"
+            if v in ["null", "None"]:
                 return None
         try:
             return float(v)
@@ -357,22 +349,19 @@ class QsParser(QS):
         """
         if self._parse_arrays:
             QsParser._check_brackets(k)
-            match_pattern = r'(\w+)(\[(.*)\])+' if not self._allow_empty else r'(\w*)(\[(.*)\])+'
+            match_pattern = r"(\w+)(\[(.*)\])+" if not self._allow_empty else r"(\w*)(\[(.*)\])+"
             match = re.match(match_pattern, k)
-            notation = re.findall(r'\[(.*?)\]', k)
+            notation = re.findall(r"\[(.*?)\]", k)
             return [match.group(1)] + notation if match else None
         if self._allow_dots:
-            match = re.match(
-                r'(\w+)(\.\w+)+', k) if not self._allow_empty else re.match(r'(\w*)(\.(\w*))', k)
-            notation = re.findall(
-                r'\.(\w+)', k) if not self._allow_empty else re.findall(r'\.(\w*)', k)
+            match = re.match(r"(\w+)(\.\w+)+", k) if not self._allow_empty else re.match(r"(\w*)(\.(\w*))", k)
+            notation = re.findall(r"\.(\w+)", k) if not self._allow_empty else re.findall(r"\.(\w*)", k)
             if match:
                 return [match.group(1)] + notation
         QsParser._check_brackets(k)
-        match_pattern = r'^(\w+)(\[\w+\])*$' if not self._allow_empty else r'^(\w*)(\[\w*\])*$'
+        match_pattern = r"^(\w+)(\[\w+\])*$" if not self._allow_empty else r"^(\w*)(\[\w*\])*$"
         match = re.match(match_pattern, k)
-        notation = re.findall(
-            r'\[(\w+)\]', k) if not self._allow_empty else re.findall(r'\[(\w*)\]', k)
+        notation = re.findall(r"\[(\w+)\]", k) if not self._allow_empty else re.findall(r"\[(\w*)\]", k)
         return [match.group(1)] + notation if match else None
 
     def _to_obj(self) -> None:
@@ -382,10 +371,10 @@ class QsParser(QS):
         Args:
             arg (dict): dictionary to transform
 
-        Returns:    
+        Returns:
             dict: transformed dictionary
         """
-        for v in self._qs_tree.values():
+        for v in self._root_node:
             v.to_object_notation()
 
 
@@ -400,12 +389,13 @@ def unpack_payload(payload: str | bytes) -> str:
         str: unpacked payload
     """
     if isinstance(payload, bytes):
-        return payload.decode('utf-8')
+        return payload.decode("utf-8")
     return payload
 
 
 def parse_from_dict(
     data: dict[str, str],
+    return_as_obj: bool = False,
     **kw,
 ):
     """
@@ -418,32 +408,36 @@ def parse_from_dict(
     try:
         parser = QsParser(**kw)
         parser.parse(data.items())
+        if return_as_obj:
+            return parser._root_node
         return parser.args
     except (Unparsable, UnbalancedBrackets):
         return up.parse_qs(
             up.urlencode(data),
-            keep_blank_values=kw.get('allow_empty', False),
-            max_num_fields=kw.get('parameter_limit', 1000),
-            separator=kw.get('delimiter', '&')
+            keep_blank_values=kw.get("allow_empty", False),
+            max_num_fields=kw.get("parameter_limit", 1000),
+            separator=kw.get("delimiter", "&"),
         )
 
 
 def parse(
-        data: str | bytes,
-        from_url: bool = False,
-        delimiter: t_Delimiter = '&',
-        depth: int = 5,
-        parameter_limit: int = 1000,
-        allow_dots: bool = False,
-        array_limit: int = 20,
-        parse_arrays: bool = False,
-        allow_empty: bool = False,
-        charset: str = 'utf-8',
-        charset_sentinel: bool = False,
-        interpret_numeric_entities: bool = False,
-        parse_primitive: bool = False,
-        primitive_strict: bool = True,
-        comma: bool = False):
+    data: str | bytes,
+    from_url: bool = False,
+    delimiter: t_Delimiter = "&",
+    depth: int = 5,
+    parameter_limit: int = 1000,
+    allow_dots: bool = False,
+    array_limit: int = 20,
+    parse_arrays: bool = False,
+    allow_empty: bool = False,
+    charset: str = "utf-8",
+    charset_sentinel: bool = False,
+    interpret_numeric_entities: bool = False,
+    parse_primitive: bool = False,
+    primitive_strict: bool = True,
+    comma: bool = False,
+    return_as_obj: bool = False,
+) -> dict | QsParser:
     """
     Parses a string into a dictionary.
 
@@ -478,15 +472,21 @@ def parse(
         if charset_sentinel:
             charset = QsParser._find_charset_sentinel(query_args) or charset
         for arg in query_args:
-            args.append(QsParser._unq(
-                arg, charset, interpret_numeric_entities))
-        parser = QsParser(depth, parameter_limit, allow_dots,
-                          array_limit, parse_arrays, allow_empty, comma, parse_primitive, primitive_strict)
+            args.append(QsParser._unq(arg, charset, interpret_numeric_entities))
+        parser = QsParser(
+            depth,
+            parameter_limit,
+            allow_dots,
+            array_limit,
+            parse_arrays,
+            allow_empty,
+            comma,
+            parse_primitive,
+            primitive_strict,
+        )
         parser.parse(args)
+        if return_as_obj:
+            return parser._root_node
         return parser.args
     except (Unparsable, UnbalancedBrackets):
-        return up.parse_qs(
-            qs,
-            keep_blank_values=allow_empty,
-            max_num_fields=parameter_limit,
-            separator=delimiter)
+        return up.parse_qs(qs, keep_blank_values=allow_empty, max_num_fields=parameter_limit, separator=delimiter)

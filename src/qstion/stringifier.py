@@ -34,8 +34,8 @@ class QsStringifier(QS):
                 data[item],
                 filter=filter)
             if node is not None:
-                self._qs_tree[node.key] = node
-        for item in self._qs_tree.values():
+                self._root_node[node.key] = node
+        for item in self._root_node.values():
             for arg in self._get_arg(item):
                 if arg is None:
                     continue
