@@ -27,6 +27,37 @@ class EmptyKey(Exception):
     pass
 
 
+class ArrayLikeDict:
+    items: dict[int, t.Any]
+
+    def __init__(self, items: dict[int, t.Any]):
+        self.items = items
+
+    def __getitem__(self, key: int) -> t.Any:
+        return self.items[key]
+
+    def append(self, item: t.Any):
+        self.items[len(self.items)] = item
+
+    def __len__(self) -> int:
+        return len(self.items)
+
+    def __iter__(self):
+        return iter(self.items.values())
+
+    def as_list(self) -> list[t.Any]:
+        ordered_items = []
+        for item_idx, item in self.items.items():
+            ordered_items.insert(item_idx, item)
+        return ordered_items
+
+    @classmethod
+    def from_qs_nodes(cls, nodes: list["QsNode"]):
+        # verify whether all keys of nodes are integer-like
+        items = {int(node.key): node.value for node in nodes}
+        return cls(items)
+
+
 class QsNode:
     """
     Data structure to represent a query string as a tree for better manipulation of arrays and objects
@@ -130,6 +161,14 @@ class QsNode:
         if self.is_array() and all([child.is_leaf() for child in self.children]):
             return True
 
+    def might_be_array(self):
+        """
+        Check if node might be an array - all children have keys that can be converted to integers
+        """
+        if self.is_leaf():
+            return False
+        return all([child.has_int_key() or child.key.isdigit() for child in self.children])
+
     def max_index(self) -> int:
         """
         Used to determine the next index for a new array item
@@ -223,6 +262,8 @@ class QsNode:
         Represent self as a dictionary
         """
         if self.is_leaf():
+            if isinstance(self.value, ArrayLikeDict):
+                return self.value.as_list()
             return self.value
         return {child.key: child.serialize() for child in self.children}
 
@@ -253,6 +294,15 @@ class QsNode:
         Check if node is empty - has no value and no children
         """
         return self.is_leaf() and self.value is None
+
+    def process_array(self):
+        if self.might_be_array():
+            self.value = ArrayLikeDict.from_qs_nodes(self.children)
+            self.children = []
+        if self.is_leaf():
+            return
+        for child in self.children:
+            child.process_array()
 
 
 class QSRoot:
@@ -338,6 +388,11 @@ class QSRoot:
         """
         return repr(self)
 
+    def process_arrays(self):
+        # using pre-order traversal
+        for child in self.child_nodes:
+            child.process_array()
+
 
 class QS:
     """
@@ -354,6 +409,7 @@ class QS:
     _parse_arrays: bool = False
     _allow_empty: bool = False
     _comma: bool = False
+    _array_like_dicts: bool = False
 
     def __init__(
         self,
@@ -364,6 +420,7 @@ class QS:
         parse_arrays: bool = False,
         allow_empty: bool = False,
         comma: bool = False,
+        array_like_dicts: bool = False,
     ):
         """
         Args:
@@ -390,6 +447,7 @@ class QS:
         self._parse_arrays = parse_arrays
         self._allow_empty = allow_empty
         self._comma = comma
+        self._array_like_dicts = array_like_dicts
 
     @staticmethod
     def _unq(arg: str, charset: str = "utf-8", interpret_numeric_entities: bool = False) -> str:

@@ -286,6 +286,21 @@ class ParserTest(unittest.TestCase):
         # test nested dictionary
         self.assertDictEqual(qs.parse_from_dict({"a[b]": "c"}), {"a": {"b": "c"}})
 
+    def test_array_like_dict(self):
+        complex_query_string = "item%5Bin_%5D%5B0%5D=1&item%5Bin_%5D%5B1%5D=2&item%5Bin_%5D%5B2%5D=3&extra%5Beq%5D=5f8a6e0f8f4e2d001f3b4e7b&limit=2&order_by=%2Bextra"
+        import src.qstion as qs
+
+        # test array like dictionary
+        self.assertDictEqual(
+            qs.parse(complex_query_string, parse_arrays=True, array_like_dicts=True, parse_primitive=True),
+            {
+                "item": {"in_": [1, 2, 3]},
+                "extra": {"eq": "5f8a6e0f8f4e2d001f3b4e7b"},
+                "limit": 2,
+                "order_by": "+extra",
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

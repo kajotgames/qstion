@@ -154,8 +154,18 @@ class QsParser(QS):
         comma: bool = False,
         parse_primitive: bool = False,
         primitive_strict: bool = True,
+        array_like_dicts: bool = False,
     ):
-        super().__init__(depth, parameter_limit, allow_dots, array_limit, parse_arrays, allow_empty, comma)
+        super().__init__(
+            depth,
+            parameter_limit,
+            allow_dots,
+            array_limit,
+            parse_arrays,
+            allow_empty,
+            comma,
+            array_like_dicts=array_like_dicts,
+        )
         self._parse_primitive = parse_primitive
         self._primitive_strict = primitive_strict
 
@@ -173,6 +183,8 @@ class QsParser(QS):
                 v = re.split(",", v)
                 v = str(v[0]) if len(v) == 1 else v
             parse_func(k, v)
+        if self._array_like_dicts:
+            self._root_node.process_arrays()
 
     @property
     def args(self) -> dict[str, str]:
@@ -320,6 +332,9 @@ class QsParser(QS):
             return v
         if isinstance(v, list):
             return [self._process_primitive(item) for item in v]
+        # might be already processed
+        if isinstance(v, (int, float, bool, type(None))):
+            return v
         if v.isdigit():
             return int(v)
         if not self._primitive_strict:
@@ -436,6 +451,7 @@ def parse(
     parse_primitive: bool = False,
     primitive_strict: bool = True,
     comma: bool = False,
+    array_like_dicts: bool = False,
     return_as_obj: bool = False,
 ) -> dict | QsParser:
     """
@@ -483,6 +499,7 @@ def parse(
             comma,
             parse_primitive,
             primitive_strict,
+            array_like_dicts,
         )
         parser.parse(args)
         if return_as_obj:
