@@ -147,6 +147,19 @@ class QsNode:
         for child in self.children:
             child.to_object_notation()
 
+    def _nice_repr(self, level: int = 0) -> str:
+        """
+        Return nice representation of the object in string format
+        """
+        indents = "-" * level
+        if self.is_leaf():
+            return f"|{indents}QsLeaf({self.key}): {self.value}\n"
+        else:
+            fmt_string = f"|{indents}QsNode({self.key}):\n"
+            for child in self.children:
+                fmt_string += child._nice_repr(level=level + 1)
+            return fmt_string
+
     def reorder(self):
         """
         Used to reorder children of a node - sorts them by key
@@ -309,6 +322,21 @@ class QSRoot:
         Overload len operator to get number of children
         """
         return len(self.child_nodes)
+
+    def __repr__(self) -> str:
+        """
+        Return nice representation of the object in string format
+        """
+        fmt_string = "QSRoot: \n"
+        for child in self.child_nodes:
+            fmt_string += f"{child._nice_repr(level=1)}"
+        return fmt_string
+
+    def __str__(self) -> str:
+        """
+        Return nice representation of the object in string format
+        """
+        return repr(self)
 
 
 class QS:
