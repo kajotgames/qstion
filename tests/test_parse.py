@@ -252,6 +252,11 @@ class ParserTest(unittest.TestCase):
         self.assertDictEqual(qs.parse("a=b,c"), {"a": "b,c"})
         self.assertDictEqual(qs.parse("a=b,c", comma=True), {"a": ["b", "c"]})
 
+        # test combined syntax
+        self.assertDictEqual(
+            qs.parse("a=b,c&a[][d]=e,f&a[]=g", comma=True, parse_arrays=True), {"a": ["b", "c", {"d": ["e", "f"]}, "g"]}
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

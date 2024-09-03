@@ -1,6 +1,8 @@
 import typing as t
 from enum import Enum
 
+t_Delimiter = t.Union[str, t.Pattern[str]]
+
 
 class NoValue:
     """
@@ -66,9 +68,9 @@ class QsNode:
         elif isinstance(item_value, list):
             parsed_value = [
                 (
-                    cls(idx, value)
+                    cls(idx, value, auto_set_key=True)
                     if not isinstance(value, dict)
-                    else cls.load_from_dict(idx, value, parse_array=parse_array)
+                    else cls.load_from_dict("", value, parse_array=parse_array, auto_set_key=True)
                 )
                 for idx, value in enumerate(item_value)
             ]
@@ -232,7 +234,7 @@ class QsNode:
         Reindex self if self is array node
         """
         if self.is_array_node:
-            self.key = shift
+            self.key += shift
 
     def convert_to_object_type(self) -> None:
         """
@@ -354,8 +356,9 @@ class QSRoot:
         if node.key in self:
             self[node.key].update(node.value, handle_duplicate_keys=duplicate_keys)
         else:
-            if len(self.children) < self.parameter_limit:
-                self.children.append(node)
+            if self.parameter_limit is not None and len(self.children) >= self.parameter_limit:
+                return
+            self.children.append(node)
 
     def __contains__(self, key: str) -> bool:
         """
@@ -397,14 +400,14 @@ class QSRoot:
         for child in self.children:
             yield from child._preorder_traversal(child)
 
-    def process_array_limts(self, limit: int = 20):
+    def process_array_limts(self, limit: int = None):
         """
         Process array limits
         """
         for node in self._preorder_traversal():
             if node.is_array_branch:
                 # since indexing starts from 0, we need to check if max index is greater or equal to limit
-                if not node.is_empty_node and max([child.key for child in node.value]) >= limit:
+                if not node.is_empty_node and limit is not None and max([child.key for child in node.value]) >= limit:
                     [child.convert_to_object_type() for child in node.value]
 
     @property

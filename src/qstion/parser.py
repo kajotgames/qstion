@@ -4,11 +4,8 @@ import decimal
 import urllib.parse as urlparse
 
 from ._qs_core import QSCore
-from ._struct_core import QsNode, EnumDuplicateKeys, QSRoot, NoValue
+from ._struct_core import QsNode, EnumDuplicateKeys, QSRoot, NoValue, t_Delimiter
 from ._exc import Unparsable, ConfigurationError
-
-
-t_Delimiter = t.Union[str, t.Pattern[str]]
 
 
 def process_argument_key(arg_key: str, allow_dots: bool = False, allow_empty_key: bool = False) -> re.Match | None:
@@ -122,10 +119,13 @@ def process_argument_value(
     """
     if comma:
         arg_val = arg_val.split(",")
-        return [
-            process_argument_value(val, parse_primitive=parse_primitive, primitive_strict=primitive_strict)
-            for val in arg_val
-        ]
+        if len(arg_val) > 1:
+            return [
+                process_argument_value(val, parse_primitive=parse_primitive, primitive_strict=primitive_strict)
+                for val in arg_val
+            ]
+        else:
+            arg_val = arg_val[0]
     if parse_primitive:
         return process_into_primitive(arg_val, primitive_strict=primitive_strict)
     return arg_val
