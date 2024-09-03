@@ -257,6 +257,23 @@ class ParserTest(unittest.TestCase):
             qs.parse("a=b,c&a[][d]=e,f&a[]=g", comma=True, parse_arrays=True), {"a": ["b", "c", {"d": ["e", "f"]}, "g"]}
         )
 
+    def test_brackets_as_list(self):
+        import src.qstion as qs
+
+        # bracketed values as list - default is false
+        self.assertDictEqual(qs.parse("a=[b,c]"), {"a": "[b,c]"})
+        self.assertDictEqual(qs.parse("a=[b,c]", brackets=True), {"a": ["b", "c"]})
+        # also works with quoted brackets
+        self.assertDictEqual(qs.parse('a=["b","c"]', brackets=True), {"a": ["b", "c"]})
+        self.assertDictEqual(qs.parse("a=[1,2]", brackets=True), {"a": ["1", "2"]})
+        # also works with parse primitive
+        self.assertDictEqual(qs.parse("a=[1,2]", brackets=True, parse_primitive=True), {"a": [1, 2]})
+        # if parse primitive is enabled but user requires items as strings, using quotes is required
+        self.assertDictEqual(qs.parse('a=["1","2"]', brackets=True, parse_primitive=True), {"a": ["1", "2"]})
+        # NOTE: nesting brackets in value is not supported and will result as if separate values were provided
+        # e.g.:
+        self.assertDictEqual(qs.parse("a=[b,[c,d]]", brackets=True), {"a": ["b", "[c", "d]"]})
+
 
 if __name__ == "__main__":
     unittest.main()

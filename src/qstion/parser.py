@@ -78,6 +78,9 @@ def process_into_primitive(arg_val: str, primitive_strict: bool = False) -> deci
         any: processed value
     """
     # check for decimal values
+    # if value starts with either '/" and ends with its counterpart, it is considered as string and should be stripped
+    if arg_val.startswith(('"', "'")) and arg_val.endswith(arg_val[0]):
+        return arg_val[1:-1]
     try:
         return decimal.Decimal(arg_val)
     except decimal.InvalidOperation:
@@ -103,7 +106,11 @@ def process_into_primitive(arg_val: str, primitive_strict: bool = False) -> deci
 
 
 def process_argument_value(
-    arg_val: str, parse_primitive: bool = False, primitive_strict: bool = False, comma: bool = False
+    arg_val: str,
+    parse_primitive: bool = False,
+    primitive_strict: bool = False,
+    comma: bool = False,
+    brackets: bool = False,
 ) -> t.Any:
     """
     Process argument value - parse value into primitive types if needed
@@ -117,6 +124,8 @@ def process_argument_value(
     Returns:
         any: processed value
     """
+    if arg_val is NoValue:
+        return arg_val
     if comma:
         arg_val = arg_val.split(",")
         if len(arg_val) > 1:
@@ -126,8 +135,19 @@ def process_argument_value(
             ]
         else:
             arg_val = arg_val[0]
+    # also allow processing of bracketed arrays as values, mutually exclusive with comma
+    if brackets:
+        if arg_val.startswith("[") and arg_val.endswith("]"):
+            arg_val = arg_val[1:-1].split(",")
+            return [
+                process_argument_value(val, parse_primitive=parse_primitive, primitive_strict=primitive_strict)
+                for val in arg_val
+            ]
     if parse_primitive:
         return process_into_primitive(arg_val, primitive_strict=primitive_strict)
+    # if value starts with either '/" and ends with its counterpart, it is considered as string and should be stripped
+    if arg_val.startswith(('"', "'")) and arg_val.endswith(arg_val[0]):
+        return arg_val[1:-1]
     return arg_val
 
 
@@ -159,6 +179,7 @@ class QsParser(QSCore):
     allow_sparse_arrays: bool
     array_limit: int
     comma: bool
+    brackets: bool
     parse_primitive: bool
     primitive_strict: bool
     duplicate_keys: EnumDuplicateKeys
@@ -180,6 +201,7 @@ class QsParser(QSCore):
         allow_sparse_arrays: bool = False,
         array_limit: int = 20,
         comma: bool = False,
+        brackets: bool = False,
         parse_primitive: bool = False,
         primitive_strict: bool = False,
         duplicate_keys: str = "combine",
@@ -207,6 +229,9 @@ class QsParser(QSCore):
         self.allow_sparse_arrays = allow_sparse_arrays
         self.array_limit = array_limit
         self.comma = comma
+        if self.comma and brackets:
+            raise ConfigurationError("Comma and brackets cannot be used together")
+        self.brackets = brackets
         self.parse_primitive = parse_primitive
         self.primitive_strict = primitive_strict
         self.duplicate_keys = EnumDuplicateKeys(duplicate_keys)
@@ -292,6 +317,7 @@ class QsParser(QSCore):
                 parse_primitive=self.parse_primitive,
                 primitive_strict=self.primitive_strict,
                 comma=self.comma,
+                brackets=self.brackets,
             )
         pattern_match = process_argument_key(
             arg_key, allow_dots=self.config["allow_dots"], allow_empty_key=self.allow_empty_keys
@@ -351,6 +377,7 @@ def parse(
     allow_sparse_arrays: bool = False,
     array_limit: int = 20,
     comma: bool = False,
+    brackets: bool = False,
     parse_primitive: bool = False,
     primitive_strict: bool = False,
     duplicate_keys: str = "combine",
@@ -401,6 +428,7 @@ def parse(
         allow_sparse_arrays=allow_sparse_arrays,
         array_limit=array_limit,
         comma=comma,
+        brackets=brackets,
         parse_primitive=parse_primitive,
         primitive_strict=primitive_strict,
         duplicate_keys=duplicate_keys,
