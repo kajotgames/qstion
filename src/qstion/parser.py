@@ -1,509 +1,410 @@
 import typing as t
-import urllib.parse as up
 import re
-from .base import QS, Unparsable, UnbalancedBrackets, QsNode, EmptyKey, ArrayLimitReached
-from html import unescape as unescape_html
+import decimal
+import urllib.parse as urlparse
+
+from ._qs_core import QSCore
+from ._struct_core import QsNode, EnumDuplicateKeys, QSRoot, NoValue
+from ._exc import Unparsable, ConfigurationError
 
 
 t_Delimiter = t.Union[str, t.Pattern[str]]
 
 
-class ArrayParse:
+def process_argument_key(arg_key: str, allow_dots: bool = False, allow_empty_key: bool = False) -> re.Match | None:
     """
-    Parses array notation into a tree like structure.
+    Process argument key - verify syntax by regular expression and return match object of nesting
+    Groups:
+    1. root key
+    2. grouped nestings
+
+    Args:
+        arg_key (str): argument key
+
+    Returns:
+        re.Match | None: match object or None if not matched
+    """
+    key_pattern_no_empty = r"^([^\[\]]+)"
+    key_pattern_empty = r"^([^\[\]]*)"
+    nesting_pattern = r"((?:\[[^\[\]]*\])*)$"
+
+    key_pattern_with_dots = r"^([^\[\]\.]+)"
+    key_pattern_with_dots_empty = r"^([^\[\]\.]*)"
+    nesting_pattern_with_dots = r"((?:\.[^\[\]\.]*)*)$"
+
+    if allow_dots:
+        parse_pattern = (
+            key_pattern_with_dots_empty + nesting_pattern_with_dots
+            if not allow_empty_key
+            else key_pattern_with_dots + nesting_pattern_with_dots
+        )
+        dot_match = re.match(parse_pattern, arg_key)
+        if dot_match is not None:
+            return dot_match
+
+    parse_pattern = (
+        key_pattern_no_empty + nesting_pattern if not allow_empty_key else key_pattern_empty + nesting_pattern
+    )
+    return re.match(parse_pattern, arg_key)
+
+
+def process_nested_keys(nestings: str, allow_dots: bool = False) -> list[str]:
+    """
+    Process nested keys - split nested keys into list of keys
+
+    Args:
+        nestings (str): nested keys
+        allow_dots (bool): whether to allow dot notation
+
+    Returns:
+        list: list of nested keys
+    """
+    dot_notation_pattern = r"\.([^\[\]\.]*)"
+    bracket_notation_pattern = r"\[([^\[\]]*)\]"
+    dot_results = []
+    if allow_dots:
+        dot_results = re.findall(dot_notation_pattern, nestings)
+    bracket_results = re.findall(bracket_notation_pattern, nestings)
+    # if allow dots is enabled and bracket results are empty, return dot results, otherwise return bracket results
+    return dot_results if allow_dots and not bracket_results else bracket_results
+
+
+def process_into_primitive(arg_val: str, primitive_strict: bool = False) -> decimal.Decimal | bool | None | str:
+    """
+    Process value into primitive types
+
+    Args:
+        arg_val (str): argument value
+        primitive_strict (bool): whether to parse values into primitives only if they have strict format e.g. True, False, None (case sensitive)
+
+    Returns:
+        any: processed value
+    """
+    # check for decimal values
+    try:
+        return decimal.Decimal(arg_val)
+    except decimal.InvalidOperation:
+        pass
+    # check for boolean or null values
+    strict_mapping = {
+        "true": True,
+        "True": True,
+        "false": False,
+        "False": False,
+        "null": None,
+        "None": None,
+    }
+    non_strict_mapping = {
+        "true": True,
+        "false": False,
+        "null": None,
+        "none": None,
+    }
+    if primitive_strict:
+        return strict_mapping.get(arg_val, arg_val)
+    return non_strict_mapping.get(arg_val.lower(), arg_val)
+
+
+def process_argument_value(
+    arg_val: str, parse_primitive: bool = False, primitive_strict: bool = False, comma: bool = False
+) -> t.Any:
+    """
+    Process argument value - parse value into primitive types if needed
+
+    Args:
+        arg_val (str): argument value
+        parse_primitive (bool): whether to parse value into primitive types e.g. int, float, bool
+        primitive_strict (bool): whether to parse values into primitives only if they have strict format e.g. True, False, None (case sensitive)
+        comma (bool): whether to parse comma separated values into list
+
+    Returns:
+        any: processed value
+    """
+    if comma:
+        arg_val = arg_val.split(",")
+        return [
+            process_argument_value(val, parse_primitive=parse_primitive, primitive_strict=primitive_strict)
+            for val in arg_val
+        ]
+    if parse_primitive:
+        return process_into_primitive(arg_val, primitive_strict=primitive_strict)
+    return arg_val
+
+
+def dict_from_tuple(tup: tuple[t.Any, t.Any]) -> dict:
+    """
+    Convert tuple into dictionary
+
+    Args:
+        tup (tuple): tuple to convert
+
+    Returns:
+        dict: converted dictionary
+    """
+    return {tup[0]: tup[1]}
+
+
+class QsParser(QSCore):
+    """
+    Query string parser class
     """
 
-    _depth: int = 5
-    _limit: int = 20
-
-    @classmethod
-    def process(cls, notation: list, val: str, depth: int = 5, max_limit: int = 20) -> QsNode:
-        """
-        Parses array notation for single key-value pair.
-
-        Args:
-            notation (list): list of keys (in nested order)
-            val (str): value to assign to the last key
-            depth (int): max depth of nested objects
-            max_limit (int): max number of elements in array
-
-        Returns:
-            list: parsed item into dictionary
-        """
-        cls._limit = max_limit
-        cls._depth = depth
-        return cls.process_notation(notation, val)
-
-    @classmethod
-    def process_notation(cls, notation: list[str], val: t.Any) -> QsNode:
-        """
-        Parses array notation recursively.
-
-        Args:
-            notation (list): list of remaining keys (in nested order)
-            val (str): value to assign to the last key
-
-        Returns:
-            QsNode: tree like structure of parsed data
-
-        Raises:
-            ArrayLimitReached: if array limit is reached
-        """
-        if not notation:
-            return val
-        current = notation[0]
-        if current.isdigit():
-            if int(current) > cls._limit:
-                raise ArrayLimitReached("Array limit reached")
-            return QsNode(int(current), cls.process_notation(notation[1:], val))
-        elif current == "":
-            res = cls.process_notation(notation[1:], val)
-            if not isinstance(res, QsNode):
-                return QsNode(None, res)
-            if not res.has_int_key() and res.key is not None:
-                # initialization of array without index - set index None to be handled by parser
-                return QsNode(None, res)
-            return res
-        else:
-            return QsNode(current, cls.process_notation(notation[1:], val))
-
-
-class LHSParse:
-    """
-    Parses left hand side notation into a tree like structure.
-    """
-
-    _depth: int = 5
-    _dots: bool = False
-    _allow_empty: bool = False
-
-    @classmethod
-    def process(
-        cls, notation: list, val: str, depth: int = 5, allow_empty: bool = False, allow_dots: bool = False
-    ) -> QsNode:
-        """
-        Parses left hand side notation for single key-value pair.
-
-        Args:
-            notation (list): list of keys (in nested order)
-            val (str): value to assign to the last key
-            depth (int): max depth of nested objects
-            allow_empty (bool): allow empty keys
-            allow_dots (bool): allow dot notation
-        """
-        cls._depth = depth
-        cls._allow_empty = allow_empty
-        cls._dots = allow_dots
-        return cls.process_notation(notation, val)
-
-    @classmethod
-    def process_notation(cls, notation: list[str], val: t.Any) -> QsNode:
-        """
-        Parses left hand side notation recursively.
-
-        Args:
-            notation (list): list of remaining keys (in nested order)
-            val (str): value to assign to the last key
-
-        Returns:
-            dict: parsed sub-dictionary
-
-        Raises:
-            EmptyKey: if empty key is found and not allowed
-        """
-        if not notation:
-            return val
-        current = notation[0]
-        if cls._depth < 0:
-            # join current and rest of notation
-            current_key = cls._max_depth_key(notation)
-            return QsNode(current_key, val)
-        cls._depth -= 1
-        return QsNode(current, cls.process_notation(notation[1:], val))
-
-    @classmethod
-    def _max_depth_key(cls, notation: list[str]) -> str:
-        """
-        Returns a key for max depth reached.
-
-        Args:
-            notation (list): list of remaining keys (in nested order)
-
-        Returns:
-            str: key for max depth reached
-        """
-        if len(notation) == 1:
-            return notation[0]
-        if cls._dots:
-            return f'{".".join(notation)}'
-        return f'[{"][".join(notation)}]'
-
-
-class QsParser(QS):
-    _parse_primitive: bool = False
-    _primitive_strict: bool = True
+    decode_dots_in_keys: bool
+    max_depth: int
+    strict_depth: bool
+    parameter_limit: int
+    allow_empty_keys: bool
+    parse_arrays: bool
+    allow_empty_arrays: bool
+    allow_sparse_arrays: bool
+    array_limit: int
+    comma: bool
+    parse_primitive: bool
+    primitive_strict: bool
+    duplicate_keys: EnumDuplicateKeys
 
     def __init__(
         self,
-        depth: int = 5,
-        parameter_limit: int = 1000,
+        charset: str = "utf-8",
+        delimiter: t_Delimiter = "&",
         allow_dots: bool = False,
+        charset_sentinel: bool = False,
+        interpret_numeric_entities: bool = False,
+        decode_dots_in_keys: bool = False,
+        max_depth: int = 5,
+        strict_depth: bool = False,
+        parameter_limit: int = 1000,
+        allow_empty_keys: bool = True,
+        parse_arrays: bool = True,
+        allow_empty_arrays: bool = False,
+        allow_sparse_arrays: bool = False,
         array_limit: int = 20,
-        parse_arrays: bool = False,
-        allow_empty: bool = False,
         comma: bool = False,
         parse_primitive: bool = False,
-        primitive_strict: bool = True,
-        array_like_dicts: bool = False,
+        primitive_strict: bool = False,
+        duplicate_keys: str = "combine",
     ):
         super().__init__(
-            depth,
-            parameter_limit,
-            allow_dots,
-            array_limit,
-            parse_arrays,
-            allow_empty,
-            comma,
-            array_like_dicts=array_like_dicts,
+            charset=charset,
+            delimiter=delimiter,
+            allow_dots=allow_dots,
+            charset_sentinel=charset_sentinel,
+            interpret_numeric_entities=interpret_numeric_entities,
         )
-        self._parse_primitive = parse_primitive
-        self._primitive_strict = primitive_strict
+        self.max_depth = max_depth
+        self.strict_depth = strict_depth
+        self.parameter_limit = parameter_limit
+        self.allow_empty_keys = allow_empty_keys
+        if self.config["allow_dots"] and parse_arrays:
+            raise ConfigurationError("Arrays cannot be parsed with dot notation enabled")
+        self.parse_arrays = parse_arrays
+        if decode_dots_in_keys and not self.config["allow_dots"]:
+            raise ConfigurationError(
+                "Decode dots in keys implies allow_dots=True, it cannot be used with allow_dots=False"
+            )
+        self.decode_dots_in_keys = decode_dots_in_keys
+        self.allow_empty_arrays = allow_empty_arrays
+        self.allow_sparse_arrays = allow_sparse_arrays
+        self.array_limit = array_limit
+        self.comma = comma
+        self.parse_primitive = parse_primitive
+        self.primitive_strict = primitive_strict
+        self.duplicate_keys = EnumDuplicateKeys(duplicate_keys)
 
-    def parse(self, args: list[tuple]):
+    def parse(
+        self, input_data: list[tuple[str, str]] | list[str] | str, return_as_object: bool = False
+    ) -> dict | QSRoot:
         """
-        Parses a list of key-value pairs into a dictionary of nested tree-like structures.
-
-        Args:
-            args (list): list of key-value pairs
+        Parse input data into QsNode
         """
-        for arg in args:
-            parse_func = self._parse_array if self._parse_arrays else self._parse_lhs
-            k, v = arg
-            if self._comma:
-                v = re.split(",", v)
-                v = str(v[0]) if len(v) == 1 else v
-            parse_func(k, v)
-        if self._array_like_dicts:
-            self._root_node.process_arrays()
-
-    @property
-    def args(self) -> dict[str, str]:
-        """
-        Returns nested dictionary as representation of argument tree.
-        """
-        return {k.key: k.serialize() for k in self._root_node}
-
-    @staticmethod
-    def _find_charset_sentinel(args: list[str]) -> str | None:
-        """
-        Finds charset sentinel argument. If found, it is removed from original list.
-
-        Args:
-            args (list): list of arguments
-
-        Returns:
-            str: charset sentinel or None if not found
-        """
-        utf_idx = None
-        for idx, arg in enumerate(args):
-            if arg.split("=")[0] == "utf8":
-                utf_idx = idx
-                break
-        if utf_idx is None:
-            return None
-        val = args.pop(utf_idx).split("=")[1]
-        if up.unquote(val, encoding="utf-8") == "✓":
-            return "utf-8"
-        elif unescape_html(up.unquote(val, encoding="iso-8859-1")) == "✓":
-            return "iso-8859-1"
+        arg_list = None
+        if isinstance(input_data, list):
+            if all(isinstance(item, tuple) for item in input_data):
+                arg_list = self.parse_request_args(input_data)
+            else:
+                arg_list = self.parse_arg_list(input_data)
+        elif isinstance(input_data, str):
+            arg_list = self.parse_query_string(input_data)
         else:
-            raise Unparsable("Unable to parse charset sentinel")
+            raise Unparsable("Invalid input data type")
+        tree_root = QSRoot(self.parameter_limit)
+        for arg in arg_list:
+            # its dict so iterate over items
+            for key, val in arg.items():
+                node = QsNode.load_from_dict(
+                    key, val, parse_array=self.parse_arrays, allow_empty=self.allow_empty_arrays
+                )
+                try:
+                    tree_root.add_child(node, duplicate_keys=self.duplicate_keys)
+                except Unparsable as e:
+                    raise Unparsable(f"Error parsing argument '{key}': {e}")
+        tree_root.process_array_limts(self.array_limit)
+        if not self.allow_sparse_arrays and tree_root.has_sparse_arrays:
+            raise Unparsable("Sparse arrays are not allowed")
+        if return_as_object:
+            return tree_root
+        return tree_root.to_dict()
 
-    @staticmethod
-    def _from_array_like(v: str | list) -> list | str:
+    def parse_request_args(self, request_args: list[tuple[str, str]]) -> list[dict]:
         """
-        Converts array-like string to list.
-
-        Args:
-            v (str): string to convert
-
-        Returns:
-            list: converted list
+        Parse request arguments into QsNode
         """
+        # join tuples into single query string, then parse it normally
+        self.config["delimiter"] = "&"
+        query_string = "&".join([f"{key}={val}" for key, val in request_args])
+        return self.parse_query_string(query_string)
 
-        if isinstance(v, str) and (v.startswith("[") and v.endswith("]")):
-            v = v.rstrip("]").lstrip("[")
-            return v.split(",")
-        return v
-
-    @staticmethod
-    def _check_brackets(k: str) -> None:
+    def parse_arg_list(self, arg_list: list[str]) -> None:
         """
-        Checks if brackets are balanced.
-
-        Args:
-            k (str): key to check
-
-        Raises:
-            UnbalancedBrackets: if brackets are unbalanced
-            Unparsable: if nesting notation is broken
+        Parse argument list into QsNode
         """
-        brackets = [char for char in k if char in "[]"]
-        # check if brackets are balanced
-        bracket_count = 0
-        for bracket in brackets:
-            if bracket == "[" and bracket_count > 0:
-                raise UnbalancedBrackets("Using brackets as key is not allowed")
-            if bracket == "]" and bracket_count == 0:
-                raise UnbalancedBrackets("Unbalanced brackets")
-            bracket_count += 1 if bracket == "[" else -1
-        if bracket_count != 0:
-            raise UnbalancedBrackets("Unbalanced brackets")
-        if brackets and not k.endswith("]"):
-            raise Unparsable("Nesting notation broken")
+        # join list into single query string, then parse it normally
+        self.config["delimiter"] = "&"
+        query_string = "&".join(arg_list)
+        return self.parse_query_string(query_string)
 
-    def _parse_array(self, k: str, v: str | list) -> None:
+    def parse_query_string(self, query_string: str) -> list[dict]:
         """
-        Parses key with array notation into a list of nested keys.
+        Parse query string into list of nested dictionaries
+        """
+        separate_args = self.load_query_string(query_string)
+        parsed_args = []
+        for arg in separate_args:
+            try:
+                arg_key, arg_val = arg.split("=", 1)
+            except ValueError:
+                arg_key = arg
+                arg_val = NoValue
+            parsed_args.append(self.parse_arg(arg_key, arg_val))
+        return parsed_args
 
-        Args:
-            k (str): key to parse
-            v (str): value to assign to the key
+    def parse_arg(self, arg_key: str, arg_val: str | None) -> dict:
         """
-        v = self._process_primitive(v)
-        notation = self._split_key(k)
-        if notation is None:
-            # continue as default lhs
-            self._parse_arrays = False
-            self._to_obj()
-            return self._parse_lhs(k, v)
-        if re.match(r"[^\d]+", notation[1]):
-            self._parse_arrays = False
-            self._to_obj()
-            return self._parse_lhs(k, v)
-        try:
-            item = ArrayParse.process(notation, v)
-            item.set_index(self._root_node.get(item.key, None), array_limit=self._array_limit)
-        except ArrayLimitReached:
-            self._parse_arrays = False
-            self._to_obj()
-            return self._parse_lhs(k, v)
-        if item.key not in self._root_node:
-            if len(self._root_node) >= self._parameter_limit:
-                return
-            self._root_node[item.key] = item
+        Parse argument into nested dictionary
+        """
+        # 1. start with trivial parsing: (a,b)
+        # 2. add nesting options: a[b]=c -> requires syntax check and parsing
+        if arg_val is None:
+            parsed_value = None
         else:
-            self._root_node[item.key].update(item)
-
-    def _parse_lhs(self, k: str, v: str | list) -> None:
-        """
-        Parses key with brackets notation into a list of nested keys.
-
-        Args:
-            k (str): key to parse
-            v (str): value to assign to the key
-        """
-        v = self._process_primitive(v)
-        notation = self._split_key(k)
-        if notation is None:
-            raise Unparsable("Unable to parse key")
-        data = LHSParse.process(
-            notation, v, depth=self._max_depth, allow_empty=self._allow_empty, allow_dots=self._allow_dots
+            parsed_value = process_argument_value(
+                arg_val,
+                parse_primitive=self.parse_primitive,
+                primitive_strict=self.primitive_strict,
+                comma=self.comma,
+            )
+        pattern_match = process_argument_key(
+            arg_key, allow_dots=self.config["allow_dots"], allow_empty_key=self.allow_empty_keys
         )
-        if data.key not in self._root_node:
-            if len(self._root_node) >= self._parameter_limit:
-                return
-            self._root_node[data.key] = data
+        if pattern_match is None:
+            raise Unparsable(f"Argument key '{arg_key}' has invalid syntax")
+        root_key = pattern_match.group(1)
+        nestings = pattern_match.group(2)
+        if not nestings:
+            return {root_key: parsed_value}
+        # process nestings
+        nesting_keys = process_nested_keys(nestings, allow_dots=self.config["allow_dots"])
+        # based on max depth, check if nesting keys are within limits, otherwise replace items over limit with last index
+        if self.strict_depth and len(nesting_keys) > self.max_depth:
+            raise Unparsable(f"Argument key '{arg_key}' exceeds max depth of {self.max_depth}")
+        if len(nesting_keys) > self.max_depth:
+            over_limit_items = nesting_keys[self.max_depth :]
+            replace_key = (
+                ".".join(over_limit_items) if self.config["allow_dots"] else f'[{"][".join(over_limit_items)}]'
+            )
+            nesting_keys = nesting_keys[: self.max_depth]
+            nesting_keys.append(replace_key)
+        # if parse_arrays is enabled, empty strings are allowed and are considered as array elements
+        # if parse_arrays is disabled, empty strings are allowed only if self.allow_empty_keys is enabled
+        if self.parse_arrays:
+            # replace any empty strings with integer index 0, replace any non-empty, digit-like strings with integers
+            nesting_keys = [int(key) if key.isdigit() else key for key in nesting_keys]
         else:
-            self._root_node[data.key].update(data)
-
-    def _process_primitive(self, v: str | list) -> t.Any:
-        """
-        Processes primitive value into a proper type.
-
-        Args:
-            v (str): value to process
-
-        Returns:
-            Any: processed value
-        """
-        v = self._from_array_like(v)
-        if not self._parse_primitive:
-            return v
-        if isinstance(v, list):
-            return [self._process_primitive(item) for item in v]
-        # might be already processed
-        if isinstance(v, (int, float, bool, type(None))):
-            return v
-        if v.isdigit():
-            return int(v)
-        if not self._primitive_strict:
-            if v.lower() in ["true", "false"]:
-                return v.lower() == "true"
-            if v.lower() in ["null", "none"]:
-                return None
-        else:
-            if v in ["true", "false"]:
-                return v == "true"
-            if v in ["null", "None"]:
-                return None
-        try:
-            return float(v)
-        except ValueError:
-            return v
-
-    def _split_key(self, k: str) -> list[str] | None:
-        """
-        Splits key into a main key and a list of nested keys.
-
-        Args:
-            k (str): key to split
-
-        Returns:
-            tuple[str, list[str]]: main key and list of nested keys or None, None if key is not parsable with current settings
-        """
-        if self._parse_arrays:
-            QsParser._check_brackets(k)
-            match_pattern = r"(\w+)(\[(.*)\])+" if not self._allow_empty else r"(\w*)(\[(.*)\])+"
-            match = re.match(match_pattern, k)
-            notation = re.findall(r"\[(.*?)\]", k)
-            return [match.group(1)] + notation if match else None
-        if self._allow_dots:
-            match = re.match(r"(\w+)(\.\w+)+", k) if not self._allow_empty else re.match(r"(\w*)(\.(\w*))", k)
-            notation = re.findall(r"\.(\w+)", k) if not self._allow_empty else re.findall(r"\.(\w*)", k)
-            if match:
-                return [match.group(1)] + notation
-        QsParser._check_brackets(k)
-        match_pattern = r"^(\w+)(\[\w+\])*$" if not self._allow_empty else r"^(\w*)(\[\w*\])*$"
-        match = re.match(match_pattern, k)
-        notation = re.findall(r"\[(\w+)\]", k) if not self._allow_empty else re.findall(r"\[(\w*)\]", k)
-        return [match.group(1)] + notation if match else None
-
-    def _to_obj(self) -> None:
-        """
-        Transforms array-like dictionary into object-like dictionary, recursively.
-
-        Args:
-            arg (dict): dictionary to transform
-
-        Returns:
-            dict: transformed dictionary
-        """
-        for v in self._root_node:
-            v.to_object_notation()
+            if not self.allow_empty_keys and "" in nesting_keys:
+                raise Unparsable(f"Empty keys are not allowed in argument key '{arg_key}'")
+        # process nesting keys
+        for key in reversed(nesting_keys):
+            parsed_value = dict_from_tuple((key, parsed_value))
+        if self.decode_dots_in_keys:
+            root_key = urlparse.unquote(root_key)
+        return {root_key: parsed_value}
 
 
-def unpack_payload(payload: str | bytes) -> str:
-    """
-    Unpacks payload from bytes to string.
-
-    Args:
-        payload (str): payload to unpack
-
-    Returns:
-        str: unpacked payload
-    """
-    if isinstance(payload, bytes):
-        return payload.decode("utf-8")
-    return payload
-
-
-def parse_from_dict(
-    data: dict[str, str],
-    return_as_obj: bool = False,
-    **kw,
-):
-    """
-    Parses a filter from dictionary (args).
-
-    Args:
-        data (dict): dictionary to parse
-        **kw: keyword arguments - for parser class
-    """
-    try:
-        parser = QsParser(**kw)
-        parser.parse(data.items())
-        if return_as_obj:
-            return parser._root_node
-        return parser.args
-    except (Unparsable, UnbalancedBrackets):
-        return up.parse_qs(
-            up.urlencode(data),
-            keep_blank_values=kw.get("allow_empty", False),
-            max_num_fields=kw.get("parameter_limit", 1000),
-            separator=kw.get("delimiter", "&"),
-        )
+# Shortcut methods
 
 
 def parse(
-    data: str | bytes,
+    data: t.Any,
     from_url: bool = False,
-    delimiter: t_Delimiter = "&",
-    depth: int = 5,
-    parameter_limit: int = 1000,
-    allow_dots: bool = False,
-    array_limit: int = 20,
-    parse_arrays: bool = False,
-    allow_empty: bool = False,
     charset: str = "utf-8",
+    delimiter: t_Delimiter = "&",
+    allow_dots: bool = False,
     charset_sentinel: bool = False,
     interpret_numeric_entities: bool = False,
-    parse_primitive: bool = False,
-    primitive_strict: bool = True,
+    decode_dots_in_keys: bool = False,
+    max_depth: int = 5,
+    strict_depth: bool = False,
+    parameter_limit: int = 1000,
+    allow_empty_keys: bool = True,
+    parse_arrays: bool = False,
+    allow_empty_arrays: bool = False,
+    allow_sparse_arrays: bool = False,
+    array_limit: int = 20,
     comma: bool = False,
-    array_like_dicts: bool = False,
+    parse_primitive: bool = False,
+    primitive_strict: bool = False,
+    duplicate_keys: str = "combine",
     return_as_obj: bool = False,
-) -> dict | QsParser:
+) -> dict | QSRoot:
     """
-    Parses a string into a dictionary.
+    Parses a string into a qs-like nested dictionary or QsRoot object.
 
     Args:
-        data (str): string to parse
-        from_url (bool): if True, data is parsed from url
-        delimiter (str): delimiter to use
-        depth (int): max depth of nested objects
-        parameter_limit (int): max number of parameters
-        allow_dots (bool): allow dot notation
-        array_limit (int): max number of elements in array
-        parse_arrays (bool): parse arrays
-        allow_empty (bool): allow empty keys and values
+        data (str): data to parse
+        from_url (bool): whether data provided is whole url or not
         charset (str): charset to use
-        charset_sentinel (bool): if True, charset is parsed from data if charset sentinel is found
-        interpret_numeric_entities (bool): if True, numeric entities are interpreted into unicode characters
-        parse_primitive (bool): if True, primitive values are parsed into proper types
-        primitive_strict (bool): if True, primitive values are parsed into proper types strictly (affects bool and nonetype)
-        comma (bool): if True, comma is used as delimiter
+        delimiter (str): delimiter to use
+        allow_dots (bool): whether to allow dots in keys
+        charset_sentinel (bool): whether to use charset sentinel from args
+        interpret_numeric_entities (bool): whether to interpret numeric entities
+        decode_dots_in_keys (bool): whether to decode dots in keys
+        max_depth (int): max depth of nesting
+        strict_depth (bool): whether to strictly enforce max depth
+        parameter_limit (int): parameter limit
+        allow_empty_keys (bool): whether to allow empty keys
+        parse_arrays (bool): whether to parse arrays
+        allow_empty_arrays (bool): whether to allow empty arrays
+        allow_sparse_arrays (bool): whether to allow sparse arrays
+        array_limit (int): array limit
+        comma (bool): whether to parse comma separated values into list
+        parse_primitive (bool): whether to parse primitive values
+        primitive_strict (bool): whether to parse primitive values strictly
+        duplicate_keys (str): duplicate keys handling
+        return_as_obj (bool): whether to return as QsRoot object
 
     Returns:
-        dict: parsed data
+        dict | QSRoot: parsed data
     """
-    data = unpack_payload(data)
+    parser = QsParser(
+        charset=charset,
+        delimiter=delimiter,
+        allow_dots=allow_dots,
+        charset_sentinel=charset_sentinel,
+        interpret_numeric_entities=interpret_numeric_entities,
+        decode_dots_in_keys=decode_dots_in_keys,
+        max_depth=max_depth,
+        strict_depth=strict_depth,
+        parameter_limit=parameter_limit,
+        allow_empty_keys=allow_empty_keys,
+        parse_arrays=parse_arrays,
+        allow_empty_arrays=allow_empty_arrays,
+        allow_sparse_arrays=allow_sparse_arrays,
+        array_limit=array_limit,
+        comma=comma,
+        parse_primitive=parse_primitive,
+        primitive_strict=primitive_strict,
+        duplicate_keys=duplicate_keys,
+    )
     if from_url:
-        qs = up.urlparse(data).query
-    else:
-        qs = data
-    args = []
-    try:
-        query_args = re.split(delimiter, qs)
-        if charset_sentinel:
-            charset = QsParser._find_charset_sentinel(query_args) or charset
-        for arg in query_args:
-            args.append(QsParser._unq(arg, charset, interpret_numeric_entities))
-        parser = QsParser(
-            depth,
-            parameter_limit,
-            allow_dots,
-            array_limit,
-            parse_arrays,
-            allow_empty,
-            comma,
-            parse_primitive,
-            primitive_strict,
-            array_like_dicts,
-        )
-        parser.parse(args)
-        if return_as_obj:
-            return parser._root_node
-        return parser.args
-    except (Unparsable, UnbalancedBrackets):
-        return up.parse_qs(qs, keep_blank_values=allow_empty, max_num_fields=parameter_limit, separator=delimiter)
+        data = urlparse.urlparse(data).query
+    return parser.parse(data, return_as_object=return_as_obj)

@@ -1,5 +1,6 @@
 import unittest
 import sys
+import decimal
 
 sys.path.append(".")
 
@@ -10,296 +11,246 @@ class ParserTest(unittest.TestCase):
         import src.qstion as qs
 
         # tests based on README of qs in npm: https://www.npmjs.com/package/qs?activeTab=readme
-        obj = qs.parse("a=c")
-        self.assertDictEqual(obj, {"a": "c"})
+        # trivial query string
+        self.assertDictEqual(qs.parse("foo=bar"), {"foo": "bar"})
 
+        # single nested object
+        self.assertDictEqual(qs.parse("a[b]=c"), {"a": {"b": "c"}})
         self.assertDictEqual(qs.parse("foo[bar]=baz"), {"foo": {"bar": "baz"}})
 
-        # plain objects not supported -> unknown data type
+    def test_uri_encoding(self):
+        import src.qstion as qs
 
-        # uri encoded strings
+        # test uri encoding
         self.assertDictEqual(qs.parse("a%5Bb%5D=c"), {"a": {"b": "c"}})
+        self.assertDictEqual(qs.parse("a%5Bb%5D%5Bc%5D=d"), {"a": {"b": {"c": "d"}}})
 
-        # double nested
+    def test_object_depth(self):
+        import src.qstion as qs
+
+        # test object depth (default depth is 5)
         self.assertDictEqual(qs.parse("foo[bar][baz]=foobarbaz"), {"foo": {"bar": {"baz": "foobarbaz"}}})
-
-        # default depth nesting -> 5
         self.assertDictEqual(
             qs.parse("a[b][c][d][e][f][g][h][i]=j"), {"a": {"b": {"c": {"d": {"e": {"f": {"[g][h][i]": "j"}}}}}}}
         )
 
-        # overriding depth nesting -> 1
+        # override default depth
         self.assertDictEqual(
-            qs.parse("a[b][c][d][e][f][g][h][i]=j", depth=1), {"a": {"b": {"[c][d][e][f][g][h][i]": "j"}}}
+            qs.parse("a[b][c][d][e][f][g][h][i]=j", max_depth=1), {"a": {"b": {"[c][d][e][f][g][h][i]": "j"}}}
+        )
+        self.assertDictEqual(
+            qs.parse("a[b][c][d][e][f][g][h][i]=j", max_depth=2), {"a": {"b": {"c": {"[d][e][f][g][h][i]": "j"}}}}
+        )
+        self.assertDictEqual(
+            qs.parse("a[b][c][d][e][f][g][h][i]=j", max_depth=3), {"a": {"b": {"c": {"d": {"[e][f][g][h][i]": "j"}}}}}
+        )
+        self.assertDictEqual(
+            qs.parse("a[b][c][d][e][f][g][h][i]=j", max_depth=4),
+            {"a": {"b": {"c": {"d": {"e": {"[f][g][h][i]": "j"}}}}}},
+        )
+        self.assertDictEqual(
+            qs.parse("a[b][c][d][e][f][g][h][i]=j", max_depth=5),
+            {"a": {"b": {"c": {"d": {"e": {"f": {"[g][h][i]": "j"}}}}}}},
+        )
+        self.assertDictEqual(
+            qs.parse("a[b][c][d][e][f][g][h][i]=j", max_depth=6),
+            {"a": {"b": {"c": {"d": {"e": {"f": {"g": {"[h][i]": "j"}}}}}}}},
         )
 
-        # parameter limited
-        self.assertDictEqual(qs.parse("a=b&c=d", parameter_limit=1), {"a": "b"})
+        # test strict depth
+        self.assertDictEqual(
+            qs.parse("a[b][c][d][e][f][g][h][i]=j", max_depth=1, strict_depth=False),
+            {"a": {"b": {"[c][d][e][f][g][h][i]": "j"}}},
+        )
+        # Going over depth should raise an error
+        with self.assertRaises(qs.parser.Unparsable):
+            qs.parse("a[b][c][d][e][f][g][h][i]=j", max_depth=1, strict_depth=True)
 
-        # parameter limited but multiple values
-        self.assertDictEqual(qs.parse("a=b&a=c", parameter_limit=1), {"a": ["b", "c"]})
+    def test_parameter_limit(self):
+        import src.qstion as qs
 
-        # parameter limited but multiple values after reaching limit
-        self.assertDictEqual(qs.parse("a=b&b=c&a=d", parameter_limit=1), {"a": ["b", "d"]})
+        # default limit is 1000
+        self.assertDictEqual(
+            qs.parse("a=1&b=2&c=3&d=4&e=5&f=6&g=7&h=8&i=9&j=10"),
+            {"a": "1", "b": "2", "c": "3", "d": "4", "e": "5", "f": "6", "g": "7", "h": "8", "i": "9", "j": "10"},
+        )
+        # override to 2
+        self.assertDictEqual(
+            qs.parse("a=1&b=2&c=3&d=4&e=5&f=6&g=7&h=8&i=9&j=10", parameter_limit=2), {"a": "1", "b": "2"}
+        )
 
-        # optional delimiter
+    def test_custom_delimiter(self):
+        import src.qstion as qs
+
+        # delimiter can be either string or regex pattern
         self.assertDictEqual(qs.parse("a=b;c=d", delimiter=";"), {"a": "b", "c": "d"})
+        self.assertDictEqual(qs.parse("a=b|c=d", delimiter=r"\|"), {"a": "b", "c": "d"})
+        self.assertDictEqual(qs.parse("a=b_c=d", delimiter="_"), {"a": "b", "c": "d"})
+        self.assertDictEqual(qs.parse("a=b|c=d", delimiter=r"[\|;]"), {"a": "b", "c": "d"})
+        self.assertDictEqual(qs.parse("a=b;c=d", delimiter=r"[\|;]"), {"a": "b", "c": "d"})
 
-        # regular expression delimiter
-        self.assertDictEqual(qs.parse("a=b;c=d,e=f", delimiter=r"[;,]"), {"a": "b", "c": "d", "e": "f"})
+    def test_dot_notation(self):
+        import src.qstion as qs
 
-        # dot notation
+        # allow dots
         self.assertDictEqual(qs.parse("a.b=c", allow_dots=True), {"a": {"b": "c"}})
+        self.assertDictEqual(qs.parse("a.b.c=d", allow_dots=True), {"a": {"b": {"c": "d"}}})
 
-        # using old charset
+        self.assertDictEqual(qs.parse("a.b=c", allow_dots=False), {"a.b": "c"})
+        # combined syntax is forbidden
+        with self.assertRaises(qs.parser.Unparsable):
+            qs.parse("a[b].c=d", allow_dots=True)
+
+        # dot notation with encoded dot in keys
+        self.assertDictEqual(
+            qs.parse("name%252Eobj.first=John&name%252Eobj.last=Doe", allow_dots=True, decode_dots_in_keys=True),
+            {"name.obj": {"first": "John", "last": "Doe"}},
+        )
+
+        # decode dots in keys must be used with allow dots
+        with self.assertRaises(qs.parser.ConfigurationError):
+            qs.parse("name%252Eobj.first=John&name%252Eobj.last=Doe", decode_dots_in_keys=True)
+
+    def test_arrays(self):
+        import src.qstion as qs
+
+        # basic array
+        self.assertDictEqual(qs.parse("a[]=b", parse_arrays=True), {"a": ["b"]})
+        self.assertDictEqual(qs.parse("a[]=b&a[]=c", parse_arrays=True), {"a": ["b", "c"]})
+
+        # set indexes - must be if not set from 0, sparse arrays option must be enabled
+        with self.assertRaises(qs.parser.Unparsable):
+            qs.parse("a[1]=b", parse_arrays=True)
+        # if using sparse arrays - result is Dictionary for clear indexing
+        self.assertDictEqual(qs.parse("a[1]=b", parse_arrays=True, allow_sparse_arrays=True), {"a": {1: "b"}})
+        self.assertDictEqual(qs.parse("a[1]=b&a[0]=c", parse_arrays=True), {"a": ["c", "b"]})
+
+        # test nested arrays
+        self.assertDictEqual(qs.parse("a[]=b&a[][c]=d", parse_arrays=True), {"a": ["b", {"c": "d"}]})
+        # test mulidimensional arrays
+        self.assertDictEqual(qs.parse("a[]=b&a[1][]=c&a[1][]=d", parse_arrays=True), {"a": ["b", ["c", "d"]]})
+
+    def test_empty_arrays(self):
+        import src.qstion as qs
+
+        # empty arrays must be explicitly enabled
+        with self.assertRaises(ValueError):
+            qs.parse("a[]", parse_arrays=True)
+
+        # empty arrays
+        self.assertDictEqual(qs.parse("a[]", parse_arrays=True, allow_empty_arrays=True), {"a": []})
+
+    def test_old_charset(self):
+        import src.qstion as qs
+
+        # old charset
         self.assertDictEqual(qs.parse("a=%A7", charset="iso-8859-1"), {"a": "§"})
 
-        # Some services add an initial utf8=✓ value to forms so that old Internet Explorer versions are more likely to submit the form as utf-8.
-        # qs supports this mechanism via the charsetSentinel option.
-        # If specified, the utf8 parameter will be omitted from the returned object.
-        # It will be used to switch to iso-8859-1/utf-8 mode depending on how the checkmark is encoded.
-        # Important: When you specify both the charset option and the charsetSentinel option,
-        #  the charset will be overridden when the request contains a utf8 parameter from which the actual charset can be deduced.
-        # In that sense the charset will behave as the default charset rather than the authoritative charset.\
-        self.assertDictEqual(
-            qs.parse("utf8=%E2%9C%93&a=%C3%B8", charset_sentinel=True, charset="iso-8859-1"), {"a": "ø"}
-        )
-
-        self.assertDictEqual(qs.parse("utf8=%26%2310003%3B&a=%F8", charset_sentinel=True, charset="utf-8"), {"a": "ø"})
-
-        # interpretNumericEntities &#...; syntax to the actual character
-        self.assertDictEqual(
-            qs.parse("a=%26%239786%3B", interpret_numeric_entities=True, charset="iso-8859-1"), {"a": "☺"}
-        )
-
-    def test_advanced_parse_objects(self):
+    def test_charset_sentinel(self):
         import src.qstion as qs
 
-        # test parse from url
-        self.assertDictEqual(qs.parse("http://example.com/?a=b", from_url=True), {"a": "b"})
-
-        # test unparsable qs
-        self.assertDictEqual(qs.parse("this_is_unparsable"), {})
-
-        # two separate nested objects
-        self.assertDictEqual(qs.parse("a[b]=c&d[e]=f"), {"a": {"b": "c"}, "d": {"e": "f"}})
-
-        # common base key for nested objects
-        self.assertDictEqual(qs.parse("a[b]=c&a[d]=e"), {"a": {"b": "c", "d": "e"}})
-
-        # common nested key for nested objects
-        self.assertDictEqual(qs.parse("a[b][c]=d&a[b][e]=f"), {"a": {"b": {"c": "d", "e": "f"}}})
-
-        # non equal nesting after creating basic object
-        self.assertDictEqual(qs.parse("a[b]=c&a[b][d]=e"), {"a": {"b": {"d": "e", "c": True}}})
-
-        # non equal basic object after nesting
-        self.assertDictEqual(qs.parse("a[b][c]=d&a[b]=e"), {"a": {"b": {"c": "d", "e": True}}})
-
-        # multiple values for same nested key
-        self.assertDictEqual(qs.parse("a[b]=c&a[b]=d"), {"a": {"b": ["c", "d"]}})
-
-        # multiple values for same nested key with different nesting
-        self.assertDictEqual(qs.parse("a[b]=c&a[b]=f&a[b][d]=e"), {"a": {"b": {str(["c", "f"]): True, "d": "e"}}})
-
-        # three elements for same nested key
-        self.assertDictEqual(qs.parse("a[b]=c&a[b]=f&a[b]=e"), {"a": {"b": ["c", "f", "e"]}})
-
-        # test array as string value
-        self.assertDictEqual(qs.parse("a=[b,c]"), {"a": ["b", "c"]})
-
-        # test very empty objects
-        self.assertDictEqual(qs.parse("a[]=&b[]=", allow_empty=True), {"a": {"": ""}, "b": {"": ""}})
-
-        # test charset sentinel arg, but not as leading arg
-        self.assertDictEqual(qs.parse("a=%A7&utf8=%26%2310003", charset="utf-8", charset_sentinel=True), {"a": "§"})
-
-        # Special case : nesting to non-nested argument
-        # NOTE: assuming that querystring 'a[b]=c&a[b][d]=e' parses into
-        # {'a': {'b': {'d': 'e', 'c': True}}}
-        # Handling of 'overloading' argument in such way: 'a[b]=c&a[b][c]=d'
-        # will result in combining both True and 'd' into array
-        self.assertDictEqual(qs.parse("a[b]=c&a[b][c]=d"), {"a": {"b": {"c": [True, "d"]}}})
-
-        # test not allowing empty keys
-        self.assertDictEqual(qs.parse("a[]=b&a[]=c&"), {"a[]": ["b", "c"]})
-
-        # test dot notation with max depth
-        self.assertDictEqual(qs.parse("a.b.c.d=e", allow_dots=True, depth=1), {"a": {"b": {"c.d": "e"}}})
-
-        # test exact depth
-        self.assertDictEqual(qs.parse("a.b.c.d=e", allow_dots=True, depth=2), {"a": {"b": {"c": {"d": "e"}}}})
-
-        # test charset_sentinel option without utf8 present
-        self.assertDictEqual(qs.parse("a=%A7", charset_sentinel=True, charset="iso-8859-1"), {"a": "§"})
-
-        # test charset_sentinel option with utf8 present and '✓' encoded in unkown charset
-        self.assertDictEqual(qs.parse("utf8=%2BJxM-&a=b", charset_sentinel=True), {"a": ["b"], "utf8": ["+JxM-"]})
-
-        # test unbalanced brackets - and thus unparsable by qstion
-        self.assertDictEqual(qs.parse("a[b=c"), {"a[b": ["c"]})
-
-        # test balanced but nested brackets
-        self.assertDictEqual(qs.parse("a[b[c]]=d"), {"a[b[c]]": ["d"]})
-
-        # test only closing brackets
-        self.assertDictEqual(qs.parse("a[b]]]=d"), {"a[b]]]": ["d"]})
-
-        # test correct brackets but broken nested notation
-        self.assertDictEqual(qs.parse("a[b][c]d=e"), {"a[b][c]d": ["e"]})
-
-    def test_basic_parse_arrays(self):
-        import src.qstion as qs
-
-        # NOTE
-        # since python list would by default not support sparse indexes, dictionary is used instead
-        # however, notation is still strictly checked so array notation is accepted
-        # and array-like dictionaries should only contain integer keys (unless notation was broken and
-        # notation is combined - with basic objects - in which case the notation is ignored)
-        # basic
-        self.assertDictEqual(qs.parse("a[]=b&a[]=c", parse_arrays=True), {"a": {0: "b", 1: "c"}})
-
-        # with indexes
-        self.assertDictEqual(qs.parse("a[1]=c&a[0]=b", parse_arrays=True), {"a": {0: "b", 1: "c"}})
-
-        # with indexes in sparse order
-        # NOTE that order is not important in python dictionary
-        self.assertDictEqual(qs.parse("a[1]=b&a[15]=c", parse_arrays=True), {"a": {1: "b", 15: "c"}})
-
-        # sparse arrays such as [,,a,b] are not supported
-
-        # array with empty string
-        self.assertDictEqual(qs.parse("a[]=&a[]=b", parse_arrays=True, allow_empty=True), {"a": {0: "", 1: "b"}})
-
-        # also with index
+        # charset sentinel - should be decoded as utf-8
         self.assertDictEqual(
-            qs.parse("a[0]=b&a[1]=&a[2]=c", parse_arrays=True, allow_empty=True), {"a": {0: "b", 1: "", 2: "c"}}
+            qs.parse("utf8=%E2%9C%93&a=%C3%B8", charset="iso-8859-1", charset_sentinel=True), {"a": "ø"}
         )
 
-        # overflowing max array length
-        self.assertDictEqual(qs.parse("a[100]=b", parse_arrays=True), {"a": {"100": "b"}})
-
-        # overriding max array length
-        self.assertDictEqual(qs.parse("a[1]=b", parse_arrays=True, array_limit=0), {"a": {"1": "b"}})
-
-        # NOTE: disabling parsing arrays and trying to parse array
-        # notation is such case: a[]=b will not result in {'a': {'0': 'b'}}
-        # but rather {'a': {'': 'b'}} -> only if empty string is allowed
-        # else is considered unparsable and used urllib.parse_qs instead
-        self.assertDictEqual(qs.parse("a[]=b", parse_arrays=False, allow_empty=True), {"a": {"": "b"}})
-
-        self.assertDictEqual(qs.parse("a[]=b", parse_arrays=False, allow_empty=False), {"a[]": ["b"]})
-
-        # If you mix notations, qs will merge the two items into an object:
-        self.assertDictEqual(qs.parse("a[]=b&a[c]=d", parse_arrays=True), {"a": {"0": "b", "c": "d"}})
-
-        # You can also create arrays of objects:
-        self.assertDictEqual(qs.parse("a[][b]=c", parse_arrays=True), {"a": {0: {"b": "c"}}})
-
-        # Some people use comma to join array, qs can parse it:
-        self.assertDictEqual(qs.parse("a=b,c", comma=True), {"a": ["b", "c"]})
-
-        # test double initialization of array with second index
-        self.assertDictEqual(qs.parse("a[][1]=c", parse_arrays=True), {"a": {1: "c"}})
-
-        # test array notation on non array arguments
-        self.assertDictEqual(qs.parse("a=c", parse_arrays=True), {"a": "c"})
-
-        # test over parameter limit in array notation
-        self.assertDictEqual(
-            qs.parse("a[0]=b&a[1]=c&b[]=x", parameter_limit=1, parse_arrays=True), {"a": {0: "b", 1: "c"}}
-        )
-
-    def test_basic_primitive_values(self):
+    def test_interpret_numeric_entities(self):
         import src.qstion as qs
 
-        # test some basic string values
-        self.assertDictEqual(qs.parse("a=b"), {"a": "b"})
+        # interpret numeric entities
+        self.assertDictEqual(qs.parse("a=%26%239786%3B"), {"a": "&#9786;"})
+        self.assertDictEqual(qs.parse("a=%26%239786%3B", interpret_numeric_entities=True), {"a": "☺"})
 
-        # with allowed primitive values, nothing should change
-        self.assertDictEqual(qs.parse("a=b", parse_primitive=True), {"a": "b"})
+    def test_sparse_arrays(self):
+        import src.qstion as qs
 
-        # test with integer value
+        # sparse arrays - behavior differs from npm qs - sparse arrays must be explicitly enabled otherwise
+        # error is raised if sparse arrays are detected,
+        # also, sparse arrays are returned as dictionary with indexes as keys instead of list
+        with self.assertRaises(qs.parser.Unparsable):
+            qs.parse("a[1]=b", parse_arrays=True)
+
+        self.assertDictEqual(qs.parse("a[1]=b", parse_arrays=True, allow_sparse_arrays=True), {"a": {1: "b"}})
+
+        # if all indexes are provided, they dont have to be in correct order as long as they are consecutive
+        self.assertDictEqual(
+            qs.parse("a[5]=b&a[3]=c&a[1]=d&a[2]=e&a[4]=f&a[0]=g", parse_arrays=True),
+            {"a": ["g", "d", "e", "c", "f", "b"]},
+        )
+
+        self.assertDictEqual(
+            qs.parse("a[1]=b&a[15]=c", parse_arrays=True, allow_sparse_arrays=True), {"a": {1: "b", 15: "c"}}
+        )
+
+    def test_empty_string_as_array_value(self):
+        import src.qstion as qs
+
+        # empty string as array value
+        self.assertDictEqual(qs.parse("a[]=", parse_arrays=True), {"a": [""]})
+
+    def test_array_limit(self):
+        import src.qstion as qs
+
+        # array limit - default is 20, everything above is considered as object and whole array is converted to object
+        self.assertDictEqual(qs.parse("a[]=1&a[]=2&a[]=3", parse_arrays=True), {"a": ["1", "2", "3"]})
+
+        self.assertDictEqual(
+            qs.parse("a[]=1&a[]=2&a[]=3&a[]=4", parse_arrays=True, array_limit=3),
+            {"a": {"0": "1", "1": "2", "2": "3", "3": "4"}},
+        )
+        # over max limit by default
+        self.assertDictEqual(qs.parse("a[100]=1", parse_arrays=True), {"a": {"100": "1"}})
+
+    def test_parse_primitive(self):
+        import src.qstion as qs
+
+        # parse primitive - default is false
+        # numbers are represented as decimal.Decimal
         self.assertDictEqual(qs.parse("a=1"), {"a": "1"})
+        self.assertDictEqual(qs.parse("a=1", parse_primitive=True), {"a": decimal.Decimal(1)})
 
-        # with allowed primitive values, parsed should be integer
-        self.assertDictEqual(qs.parse("a=1", parse_primitive=True), {"a": 1})
+        # floats are represented as decimal.Decimal as well
+        self.assertDictEqual(qs.parse("a=1.5"), {"a": "1.5"})
+        self.assertDictEqual(qs.parse("a=1.5", parse_primitive=True), {"a": decimal.Decimal("1.5")})
 
-        # test with float value
-        self.assertDictEqual(qs.parse("a=1.1"), {"a": "1.1"})
+        # booleas are accepted normally, with no strict case if primitive strict is false
+        self.assertDictEqual(qs.parse("a=true"), {"a": "true"})
+        self.assertDictEqual(qs.parse("a=true", parse_primitive=True), {"a": True})
+        self.assertDictEqual(qs.parse("a=false"), {"a": "false"})
+        self.assertDictEqual(qs.parse("a=false", parse_primitive=True), {"a": False})
+        # use whatever case
+        self.assertDictEqual(qs.parse("a=True", parse_primitive=True), {"a": True})
+        self.assertDictEqual(qs.parse("a=False", parse_primitive=True), {"a": False})
+        self.assertDictEqual(qs.parse("a=TRUE", parse_primitive=True), {"a": True})
+        self.assertDictEqual(qs.parse("a=FALSE", parse_primitive=True), {"a": False})
+        # when using primitive strict, only true/True and false/False are accepted
+        self.assertDictEqual(qs.parse("a=true", parse_primitive=True, primitive_strict=True), {"a": True})
+        self.assertDictEqual(qs.parse("a=false", parse_primitive=True, primitive_strict=True), {"a": False})
+        self.assertDictEqual(qs.parse("a=True", parse_primitive=True, primitive_strict=True), {"a": True})
+        self.assertDictEqual(qs.parse("a=False", parse_primitive=True, primitive_strict=True), {"a": False})
+        # any other value is considered as string
+        self.assertDictEqual(qs.parse("a=TRUE", parse_primitive=True, primitive_strict=True), {"a": "TRUE"})
+        self.assertDictEqual(qs.parse("a=FALSE", parse_primitive=True, primitive_strict=True), {"a": "FALSE"})
 
-        # with allowed primitive values, parsed should be float
-        self.assertDictEqual(qs.parse("a=1.1", parse_primitive=True), {"a": 1.1})
+        # null/None is accepted as well
+        self.assertDictEqual(qs.parse("a=null"), {"a": "null"})
+        self.assertDictEqual(qs.parse("a=null", parse_primitive=True), {"a": None})
+        self.assertDictEqual(qs.parse("a=None"), {"a": "None"})
+        self.assertDictEqual(qs.parse("a=None", parse_primitive=True), {"a": None})
+        self.assertDictEqual(qs.parse("a=none"), {"a": "none"})
+        self.assertDictEqual(qs.parse("a=none", parse_primitive=True), {"a": None})
+        self.assertDictEqual(qs.parse("a=NONE", parse_primitive=True), {"a": None})
+        self.assertDictEqual(qs.parse("a=NULL", parse_primitive=True), {"a": None})
+        # same goes with strict primitive
+        self.assertDictEqual(qs.parse("a=null", parse_primitive=True, primitive_strict=True), {"a": None})
+        self.assertDictEqual(qs.parse("a=None", parse_primitive=True, primitive_strict=True), {"a": None})
 
-        # test with boolean value
-        self.assertDictEqual(qs.parse("a=true&b=false"), {"a": "true", "b": "false"})
-
-        # with allowed primitive values, parsed should be boolean
-        self.assertDictEqual(qs.parse("a=true&b=false", parse_primitive=True), {"a": True, "b": False})
-
-        # test with null value
-        self.assertDictEqual(
-            qs.parse("a=null&b=NULL&c=Null&d=None"), {"a": "null", "b": "NULL", "c": "Null", "d": "None"}
-        )
-
-        # with allowed primitive values, parsed should be None
-        self.assertDictEqual(qs.parse("a=null&b=None", parse_primitive=True), {"a": None, "b": None})
-
-        # test array of primitive values
-        self.assertDictEqual(qs.parse("a[]=1&a[]=2&a[]=3", parse_arrays=True), {"a": {0: "1", 1: "2", 2: "3"}})
-
-        # with allowed primitive values, parsed should be array of integers
-        self.assertDictEqual(
-            qs.parse("a[]=1&a[]=2&a[]=3", parse_arrays=True, parse_primitive=True), {"a": {0: 1, 1: 2, 2: 3}}
-        )
-
-        # test classic array of primitive values
-        self.assertDictEqual(qs.parse("a=[1,2,3]"), {"a": ["1", "2", "3"]})
-
-        # with allowed primitive values, parsed should be array of integers
-        self.assertDictEqual(qs.parse("a=[1,2,3]", parse_primitive=True), {"a": [1, 2, 3]})
-
-        # test classic array of primitive values with mixed types
-        self.assertDictEqual(qs.parse("a=[1,a,true,Null]"), {"a": ["1", "a", "true", "Null"]})
-
-        # with allowed primitive values, parsed should be array of primitives with mixed types
-        self.assertDictEqual(qs.parse("a=[1,a,true,null]", parse_primitive=True), {"a": [1, "a", True, None]})
-
-        # test primitive values with non-strict keywords for bool and null
-        self.assertDictEqual(
-            qs.parse("a=True&b=False&c=none", parse_primitive=True), {"a": "True", "b": "False", "c": "none"}
-        )
-
-        # test primitive values with non-strict option
-        self.assertDictEqual(
-            qs.parse("a=True&b=False&c=NULL", parse_primitive=True, primitive_strict=False),
-            {"a": True, "b": False, "c": None},
-        )
-
-    def test_parsing_from_dict(self):
-
-        # test parsing from dictionary
+    def test_comma_as_list(self):
         import src.qstion as qs
 
-        self.assertDictEqual(qs.parse_from_dict({"a": "b"}), {"a": "b"})
-
-        # test nested dictionary
-        self.assertDictEqual(qs.parse_from_dict({"a[b]": "c"}), {"a": {"b": "c"}})
-
-    def test_array_like_dict(self):
-        complex_query_string = "item%5Bin_%5D%5B0%5D=1&item%5Bin_%5D%5B1%5D=2&item%5Bin_%5D%5B2%5D=3&extra%5Beq%5D=5f8a6e0f8f4e2d001f3b4e7b&limit=2&order_by=%2Bextra"
-        import src.qstion as qs
-
-        # test array like dictionary
-        self.assertDictEqual(
-            qs.parse(complex_query_string, parse_arrays=True, array_like_dicts=True, parse_primitive=True),
-            {
-                "item": {"in_": [1, 2, 3]},
-                "extra": {"eq": "5f8a6e0f8f4e2d001f3b4e7b"},
-                "limit": 2,
-                "order_by": "+extra",
-            },
-        )
+        # comma as list - default is false
+        self.assertDictEqual(qs.parse("a=b,c"), {"a": "b,c"})
+        self.assertDictEqual(qs.parse("a=b,c", comma=True), {"a": ["b", "c"]})
 
 
 if __name__ == "__main__":
