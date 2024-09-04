@@ -1,5 +1,7 @@
 import typing as t
 from enum import Enum
+import urllib.parse as up
+from html import escape as escape_html
 
 t_Delimiter = t.Union[str, t.Pattern[str]]
 
@@ -43,7 +45,12 @@ class QsNode:
 
     @classmethod
     def load_from_dict(
-        cls, item_key: int | str | tuple, item_value: t.Any, parse_array: bool = False, allow_empty: bool = False
+        cls,
+        item_key: int | str | tuple,
+        item_value: t.Any,
+        parse_array: bool = False,
+        allow_empty: bool = False,
+        auto_set_key: bool = False,
     ) -> "QsNode":
         """
         Load data (recursively) from dictionary into QSNode
@@ -59,7 +66,7 @@ class QsNode:
         if isinstance(item_value, dict):
             parsed_value = []
             for key, value in item_value.items():
-                new_node = cls.load_from_dict(key, value, parse_array=parse_array)
+                new_node = cls.load_from_dict(key, value, allow_empty=allow_empty, parse_array=parse_array)
                 if new_node is not None:
                     parsed_value.append(new_node)
             if not parsed_value and not allow_empty:
@@ -69,8 +76,10 @@ class QsNode:
             parsed_value = [
                 (
                     cls(idx, value, auto_set_key=True)
-                    if not isinstance(value, dict)
-                    else cls.load_from_dict("", value, parse_array=parse_array, auto_set_key=True)
+                    if not isinstance(value, (dict, list))
+                    else cls.load_from_dict(
+                        idx, value, parse_array=parse_array, allow_empty=allow_empty, auto_set_key=True
+                    )
                 )
                 for idx, value in enumerate(item_value)
             ]
@@ -80,7 +89,7 @@ class QsNode:
             parsed_value = item_value
         if parse_array and item_key == "":
             return cls(0, parsed_value, auto_set_key=True)
-        return cls(item_key, parsed_value)
+        return cls(item_key, parsed_value, auto_set_key=auto_set_key)
 
     def __contains__(self, key: str | tuple) -> bool:
         """
@@ -264,6 +273,18 @@ class QsNode:
         return True
 
     @property
+    def is_simple_array_branch(self) -> bool:
+        """
+        Check if node is a simple array-branched node (it's values are not nested nodes and it's not a sparse array)
+        """
+        if self.is_array_branch and not self.is_sparse_array:
+            for child in self.value:
+                if isinstance(child.value, list):
+                    return False
+            return True
+        return False
+
+    @property
     def is_object_branch(self) -> bool:
         """
         Check if node is an object-branched node
@@ -327,17 +348,26 @@ class QsNode:
             return [child.to_dict() for child in sorted(self.value, key=lambda x: x.key)]
         return {child.key: child.to_dict() for child in self.value}
 
-    def _preorder_traversal(self, node: "QsNode") -> t.Generator["QsNode", None, None]:
+    def _preorder_traversal(self) -> t.Generator["QsNode", None, None]:
         """
         Preorder traversal of the tree
         """
-        yield node
-        if not node.is_leaf:
-            for child in node.value:
-                yield from self._preorder_traversal(child)
+        yield self
+        if not self.is_leaf:
+            for child in self.value:
+                yield from child._preorder_traversal()
+
+    def _postorder_traversal(self) -> t.Generator["QsNode", None, None]:
+        """
+        Postorder traversal of the tree
+        """
+        if not self.is_leaf:
+            for child in self.value:
+                yield from child._postorder_traversal()
+        yield self
 
 
-class QSRoot:
+class QsRoot:
     """
     Base class for query string parser and stringifier - preserves order of children
     """
@@ -353,6 +383,8 @@ class QSRoot:
         """
         Add child node to root
         """
+        if node is None:
+            return
         if node.key in self:
             self[node.key].update(node.value, handle_duplicate_keys=duplicate_keys)
         else:
@@ -398,7 +430,14 @@ class QSRoot:
         Preorder traversal of the tree
         """
         for child in self.children:
-            yield from child._preorder_traversal(child)
+            yield from child._preorder_traversal()
+
+    def _postorder_traversal(self) -> t.Generator[QsNode, None, None]:
+        """
+        Postorder traversal of the tree
+        """
+        for child in self.children:
+            yield from child._postorder_traversal()
 
     def process_array_limts(self, limit: int = None):
         """
@@ -419,3 +458,10 @@ class QSRoot:
             if node.is_sparse_array:
                 return True
         return False
+
+    @property
+    def is_empty(self) -> bool:
+        """
+        Check if root is empty
+        """
+        return self.children == []

@@ -26,3 +26,9 @@ class ConfigurationError(Exception):
     """Exception raised when configuration is invalid"""
 
     pass
+
+
+class UnknownInputType(Exception):
+    """Exception raised when input type is unknown"""
+
+    pass

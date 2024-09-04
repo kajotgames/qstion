@@ -1,7 +1,7 @@
-from .parser import parse, parse_from_dict
-from .stringifier import stringify
+from .parser import parse, QsParser
+from .stringifier import stringify, QsStringifier
 
-VERSION = (1, 0, 1)
-__version__ = '.'.join(map(str, VERSION))
+VERSION = (1, 0, 2)
+__version__ = ".".join(map(str, VERSION))
 
-__all__ = ['parse', 'parse_from_dict', 'stringify']
+__all__ = ["parse", "QsParser", "stringify", "QsStringifier"]

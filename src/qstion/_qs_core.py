@@ -4,7 +4,7 @@ import urllib.parse as up
 import re
 
 from ._exc import Unparsable
-from ._struct_core import QsNode, QSRoot
+from ._struct_core import QsNode, QsRoot
 
 t_Delimiter = t.Union[str, t.Pattern[str]]
 
@@ -136,12 +136,3 @@ class QSCore:
         else:
             raw_args = unquoted_args
         return raw_args
-
-    def load_filter_dict(self, filter_dict: dict) -> QSRoot:
-        """
-        Load data from filter dictionary into QSRoot object
-        """
-        root = QSRoot()
-        for key, value in filter_dict.items():
-            node = QsNode.load_from_dict(key, value)
-            root.add_child(node)

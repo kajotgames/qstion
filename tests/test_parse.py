@@ -274,6 +274,22 @@ class ParserTest(unittest.TestCase):
         # e.g.:
         self.assertDictEqual(qs.parse("a=[b,[c,d]]", brackets=True), {"a": ["b", "[c", "d]"]})
 
+    def test_complex_query_strings(self):
+        import src.qstion as qs
+
+        # complex query strings
+        self.assertDictEqual(
+            qs.parse("a=b&c[0]=d&c[1]=e%3Df&f[0][0]=g&f[1][0]=h", parse_arrays=True),
+            {"a": "b", "c": ["d", "e=f"], "f": [["g"], ["h"]]},
+        )
+
+        # NOTE arguments which are non-array and has no value such as query_string: `a` will not be parsed
+        self.assertDictEqual(qs.parse("a&b[0]=c&b[1]=d", parse_arrays=True), {"b": ["c", "d"]})
+
+        self.assertDictEqual(
+            qs.parse("a=%82%B1%82%F1%82%C9%82%BF%82%CD%81I", charset="shift_jis"), {"a": "こんにちは！"}
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

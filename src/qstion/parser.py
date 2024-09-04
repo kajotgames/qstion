@@ -4,7 +4,7 @@ import decimal
 import urllib.parse as urlparse
 
 from ._qs_core import QSCore
-from ._struct_core import QsNode, EnumDuplicateKeys, QSRoot, NoValue, t_Delimiter
+from ._struct_core import QsNode, EnumDuplicateKeys, QsRoot, NoValue, t_Delimiter
 from ._exc import Unparsable, ConfigurationError
 
 
@@ -238,7 +238,7 @@ class QsParser(QSCore):
 
     def parse(
         self, input_data: list[tuple[str, str]] | list[str] | str, return_as_object: bool = False
-    ) -> dict | QSRoot:
+    ) -> dict | QsRoot:
         """
         Parse input data into QsNode
         """
@@ -252,7 +252,7 @@ class QsParser(QSCore):
             arg_list = self.parse_query_string(input_data)
         else:
             raise Unparsable("Invalid input data type")
-        tree_root = QSRoot(self.parameter_limit)
+        tree_root = QsRoot(self.parameter_limit)
         for arg in arg_list:
             # its dict so iterate over items
             for key, val in arg.items():
@@ -382,7 +382,7 @@ def parse(
     primitive_strict: bool = False,
     duplicate_keys: str = "combine",
     return_as_obj: bool = False,
-) -> dict | QSRoot:
+) -> dict | QsRoot:
     """
     Parses a string into a qs-like nested dictionary or QsRoot object.
 
