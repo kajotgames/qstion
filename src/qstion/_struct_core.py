@@ -333,8 +333,13 @@ class QsNode:
             return f"|{level_dashes} Leaf: ({type(self.key)}){self.key} -> {self.value}"
         else:
             formatted_string = f"|{level_dashes} Branch: {self.key}\n"
-            for child in self.value:
-                formatted_string += f"{child._repr(level=level + 1)}\n"
+            # might be already simplified
+            if all(isinstance(child, str) for child in self.value):
+                formatted_string += "\n".join([f"|{level_dashes}-{item}" for item in self.value])
+                formatted_string += "\n"
+            else:
+                for child in self.value:
+                    formatted_string += f"{child._repr(level=level + 1)}\n"
             return formatted_string
 
     def to_dict(self) -> dict:

@@ -65,6 +65,31 @@ class TestStructuralFeatures(unittest.TestCase):
         self.assertEqual(parsed_root.children[0].value[1], "bar")
         self.assertEqual(parsed_root.children[0].value[2], "baz")
 
+    def test_representation_after_simplifying(self):
+        import src.qstion as qs
+
+        # set up simple filter with correct simple array inside
+        data = {"foo": ["bar", "baz"]}
+        parsed_root = qs.parser.QsParser.load_filter_from_dict(data)
+
+        # verify that the filter has the correct structure
+        self.assertEqual(parsed_root.children[0].key, "foo")
+        # value should be list of nested Node objects
+        self.assertIsInstance(parsed_root.children[0].value, list)
+        # Nodes should have key indexing their position in the list and value being the string
+        self.assertEqual(parsed_root.children[0].value[0].key, 0)
+        self.assertEqual(parsed_root.children[0].value[0].value, "bar")
+        self.assertEqual(parsed_root.children[0].value[1].key, 1)
+        self.assertEqual(parsed_root.children[0].value[1].value, "baz")
+
+        # try to represent
+        self.assertIsInstance(parsed_root._repr(), str)
+
+        # simplifying arrays in root should transform these nested nodes into simple array
+        parsed_root.simplify_arrays()
+        # should be able to represent even after simplifying
+        self.assertIsInstance(parsed_root._repr(), str)
+
 
 if __name__ == "__main__":
     unittest.main()
