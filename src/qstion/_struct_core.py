@@ -366,6 +366,18 @@ class QsNode:
                 yield from child._postorder_traversal()
         yield self
 
+    def simplify_arrays(self):
+        """
+        Transform simple array-like dicts into arrays
+        """
+        if self.is_leaf:
+            return
+        if self.is_simple_array_branch:
+            self.value = [child.value for child in sorted(self.value, key=lambda x: x.key)]
+        else:
+            for child in self.value:
+                child.simplify_arrays()
+
 
 class QsRoot:
     """
@@ -448,6 +460,13 @@ class QsRoot:
                 # since indexing starts from 0, we need to check if max index is greater or equal to limit
                 if not node.is_empty_node and limit is not None and max([child.key for child in node.value]) >= limit:
                     [child.convert_to_object_type() for child in node.value]
+
+    def simplify_arrays(self):
+        """
+        Transform simple array-like dicts into arrays
+        """
+        for node in self.children:
+            node.simplify_arrays()
 
     @property
     def has_sparse_arrays(self) -> bool:

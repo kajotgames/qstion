@@ -136,3 +136,20 @@ class QSCore:
         else:
             raw_args = unquoted_args
         return raw_args
+
+    @staticmethod
+    def load_filter_from_dict(data: dict) -> QsRoot:
+        """
+        Load filter from dictionary
+
+        Args:
+            data (dict): dictionary to load filter from
+
+        Returns:
+            QsRoot: root node of filter
+        """
+        root = QsRoot()
+        for key, value in data.items():
+            node = QsNode.load_from_dict(key, value)
+            root.add_child(node)
+        return root
