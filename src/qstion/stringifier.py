@@ -45,13 +45,13 @@ class NestedArgument:
         if encode:
             key = f"{up.quote(key, encoding=charset, errors='xmlcharrefreplace')}"
             value = (
-                f"{up.quote(self.value, encoding=charset, errors='xmlcharrefreplace')}"
+                f"{up.quote(str(self.value), encoding=charset, errors='xmlcharrefreplace')}"
                 if self.value is not NoValue
                 else self.value
             )
         elif encode_values_only:
             value = (
-                f"{up.quote(self.value, encoding=charset, errors='xmlcharrefreplace')}"
+                f"{up.quote(str(self.value), encoding=charset, errors='xmlcharrefreplace')}"
                 if self.value is not NoValue
                 else self.value
             )
