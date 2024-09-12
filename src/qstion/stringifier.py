@@ -131,7 +131,7 @@ class QsStringifier(QSCore):
 
     def stringify_tree(self, root: QsRoot) -> str:
         if root.is_empty:
-            return formatted_string
+            return ""
         arglist: list[NestedArgument] = []
         for node in root.children:
             arglist += self.traverse_node(node, None)
