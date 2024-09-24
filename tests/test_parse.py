@@ -72,11 +72,22 @@ class ParserTest(unittest.TestCase):
         # default limit is 1000
         self.assertDictEqual(
             qs.parse("a=1&b=2&c=3&d=4&e=5&f=6&g=7&h=8&i=9&j=10"),
-            {"a": "1", "b": "2", "c": "3", "d": "4", "e": "5", "f": "6", "g": "7", "h": "8", "i": "9", "j": "10"},
+            {
+                "a": '"1"',
+                "b": '"2"',
+                "c": '"3"',
+                "d": '"4"',
+                "e": '"5"',
+                "f": '"6"',
+                "g": '"7"',
+                "h": '"8"',
+                "i": '"9"',
+                "j": '"10"',
+            },
         )
         # override to 2
         self.assertDictEqual(
-            qs.parse("a=1&b=2&c=3&d=4&e=5&f=6&g=7&h=8&i=9&j=10", parameter_limit=2), {"a": "1", "b": "2"}
+            qs.parse("a=1&b=2&c=3&d=4&e=5&f=6&g=7&h=8&i=9&j=10", parameter_limit=2), {"a": '"1"', "b": '"2"'}
         )
 
     def test_custom_delimiter(self):
@@ -192,25 +203,25 @@ class ParserTest(unittest.TestCase):
         import src.qstion as qs
 
         # array limit - default is 20, everything above is considered as object and whole array is converted to object
-        self.assertDictEqual(qs.parse("a[]=1&a[]=2&a[]=3", parse_arrays=True), {"a": ["1", "2", "3"]})
+        self.assertDictEqual(qs.parse("a[]=1&a[]=2&a[]=3", parse_arrays=True), {"a": ['"1"', '"2"', '"3"']})
 
         self.assertDictEqual(
             qs.parse("a[]=1&a[]=2&a[]=3&a[]=4", parse_arrays=True, array_limit=3),
-            {"a": {"0": "1", "1": "2", "2": "3", "3": "4"}},
+            {"a": {"0": '"1"', "1": '"2"', "2": '"3"', "3": '"4"'}},
         )
         # over max limit by default
-        self.assertDictEqual(qs.parse("a[100]=1", parse_arrays=True), {"a": {"100": "1"}})
+        self.assertDictEqual(qs.parse("a[100]=1", parse_arrays=True), {"a": {"100": '"1"'}})
 
     def test_parse_primitive(self):
         import src.qstion as qs
 
         # parse primitive - default is false
         # numbers are represented as decimal.Decimal
-        self.assertDictEqual(qs.parse("a=1"), {"a": "1"})
+        self.assertDictEqual(qs.parse("a=1"), {"a": '"1"'})
         self.assertDictEqual(qs.parse("a=1", parse_primitive=True), {"a": decimal.Decimal(1)})
 
         # floats are represented as decimal.Decimal as well
-        self.assertDictEqual(qs.parse("a=1.5"), {"a": "1.5"})
+        self.assertDictEqual(qs.parse("a=1.5"), {"a": '"1.5"'})
         self.assertDictEqual(qs.parse("a=1.5", parse_primitive=True), {"a": decimal.Decimal("1.5")})
 
         # booleas are accepted normally, with no strict case if primitive strict is false
@@ -265,11 +276,11 @@ class ParserTest(unittest.TestCase):
         self.assertDictEqual(qs.parse("a=[b,c]", brackets=True), {"a": ["b", "c"]})
         # also works with quoted brackets
         self.assertDictEqual(qs.parse('a=["b","c"]', brackets=True), {"a": ["b", "c"]})
-        self.assertDictEqual(qs.parse("a=[1,2]", brackets=True), {"a": ["1", "2"]})
+        self.assertDictEqual(qs.parse("a=[1,2]", brackets=True), {"a": ['"1"', '"2"']})
         # also works with parse primitive
         self.assertDictEqual(qs.parse("a=[1,2]", brackets=True, parse_primitive=True), {"a": [1, 2]})
         # if parse primitive is enabled but user requires items as strings, using quotes is required
-        self.assertDictEqual(qs.parse('a=["1","2"]', brackets=True, parse_primitive=True), {"a": ["1", "2"]})
+        self.assertDictEqual(qs.parse('a=["1","2"]', brackets=True, parse_primitive=True), {"a": ['"1"', '"2"']})
         # NOTE: nesting brackets in value is not supported and will result as if separate values were provided
         # e.g.:
         self.assertDictEqual(qs.parse("a=[b,[c,d]]", brackets=True), {"a": ["b", "[c", "d]"]})

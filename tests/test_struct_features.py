@@ -90,6 +90,44 @@ class TestStructuralFeatures(unittest.TestCase):
         # should be able to represent even after simplifying
         self.assertIsInstance(parsed_root._repr(), str)
 
+    def test_type_parsing(self):
+        """
+        This test is to verify whether integer like-strings are reconstructed as quoted
+        since with usage of `parse_primitive` we would not be able to tell if user wanted to
+        provide a string or an integer.
+        """
+        import src.qstion as qs
+        import src.qstion._struct_core as core
+
+        # set up simple filter with correct simple array inside
+        controll_string = 'foo="1"'  # force string type
+        parsed_root = qs.parse(controll_string, return_as_obj=True)
+        # verify that the filter has the correct structure
+
+        match parsed_root:
+            case core.QsRoot(
+                parameter_limit=_,
+                children=[
+                    core.QsNode(
+                        auto_set_key=_,
+                        key="foo",
+                        value="1",
+                    )
+                ],
+            ):
+                pass
+            case _:
+                self.fail("Parsing failed")
+
+        # now stringify the parsed root
+        stringified = qs.stringify(parsed_root, encode=False)
+        self.assertEqual(stringified, controll_string)
+
+        # try to dump the parsed root to dict - should have quotes around the value
+        dumped = parsed_root.to_dict()
+        self.assertEqual(dumped, {"foo": "\"1\""})
+
+
 
 if __name__ == "__main__":
     unittest.main()

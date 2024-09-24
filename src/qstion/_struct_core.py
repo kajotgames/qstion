@@ -2,6 +2,7 @@ import typing as t
 from enum import Enum
 import urllib.parse as up
 from html import escape as escape_html
+import decimal
 
 t_Delimiter = t.Union[str, t.Pattern[str]]
 
@@ -347,6 +348,13 @@ class QsNode:
         Convert QsNode to dictionary
         """
         if self.is_leaf:
+            if isinstance(self.value, str):
+                try:
+                    # if value is string but decimal-like, it needs to be quoted for better clarity and further handling
+                    _ = decimal.Decimal(self.value)
+                    return f'"{self.value}"'
+                except (decimal.InvalidOperation, ValueError, TypeError):
+                    return self.value
             return self.value
         if self.is_array_branch and not self.is_sparse_array:
             # return them in correct order

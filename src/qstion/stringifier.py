@@ -5,6 +5,7 @@ from ._exc import UnknownInputType, Unparsable, ConfigurationError
 import enum
 import urllib.parse as up
 from copy import deepcopy
+import decimal
 
 
 class NestedArgument:
@@ -19,7 +20,13 @@ class NestedArgument:
         self.keys.append(key)
 
     def set_value(self, value: str):
-        self.value = value
+        # NOTE: if value is Decimal-like string we have to quote it
+        # otherwise when parsing with `parse_primitive` = True it would parse as number
+        try:
+            _ = decimal.Decimal(value)
+            self.value = f'"{value}"'
+        except (decimal.InvalidOperation, TypeError, ValueError):
+            self.value = value
 
     def stringify(
         self,
