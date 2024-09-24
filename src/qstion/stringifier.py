@@ -22,10 +22,13 @@ class NestedArgument:
     def set_value(self, value: str):
         # NOTE: if value is Decimal-like string we have to quote it
         # otherwise when parsing with `parse_primitive` = True it would parse as number
-        try:
-            _ = decimal.Decimal(value)
-            self.value = f'"{value}"'
-        except (decimal.InvalidOperation, TypeError, ValueError):
+        if isinstance(value, str):
+            try:
+                _ = decimal.Decimal(value)
+                self.value = f'"{value}"'
+            except (decimal.InvalidOperation, TypeError, ValueError):
+                self.value = value
+        else:
             self.value = value
 
     def stringify(
