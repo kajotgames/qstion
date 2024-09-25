@@ -481,6 +481,15 @@ class QsRoot:
         for node in self.children:
             node.simplify_arrays()
 
+    def pop(self, key: str, default: t.Any = None) -> QsNode:
+        """
+        Pop child node by key
+        """
+        for idx, child in enumerate(self.children):
+            if child.key == key:
+                return self.children.pop(idx)
+        return default
+
     @property
     def has_sparse_arrays(self) -> bool:
         """

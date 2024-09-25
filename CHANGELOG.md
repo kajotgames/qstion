@@ -4,6 +4,10 @@ All notable changes to [qstion](https://github.com/kajotgames/qstion) project wi
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
+## [1.1.7] - 2024-10-01
+
+- added `QsRoot` method `pop` for removing node from tree - works like `dict.pop` method
+
 ## [1.1.5] - 2024-09-24
 
 - added quoting to values which could represent decimal value when parsed with `parse_primitive` arg but need to be represented as strings (also applies for stringifying)

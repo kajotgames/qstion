@@ -125,8 +125,51 @@ class TestStructuralFeatures(unittest.TestCase):
 
         # try to dump the parsed root to dict - should have quotes around the value
         dumped = parsed_root.to_dict()
-        self.assertEqual(dumped, {"foo": "\"1\""})
+        self.assertEqual(dumped, {"foo": '"1"'})
 
+    def test_qsroot_pop(self):
+        """
+        This test targets method `pop` from object `QsRoot` - should work equivalently as dict.pop()
+        """
+        import src.qstion as qs
+        from src.qstion._struct_core import QsRoot, QsNode
+
+        # set up controll filter
+        controll = qs.parse(
+            qs.stringify({"a": "x", "b": {"c": "d"}, "e": ["f", "g", "h"]}), parse_arrays=True, return_as_obj=True
+        )
+        b_element = controll.pop("b")
+        match controll:
+            case QsRoot(
+                parameter_limit=_,
+                children=[
+                    QsNode(
+                        auto_set_key=_,
+                        key="a",
+                        value="x",
+                    ),
+                    QsNode(auto_set_key=_, key="e", value=[*_]),
+                ],
+            ):
+                pass
+            case _:
+                self.fail("Parsing failed")
+
+        match b_element:
+            case QsNode(
+                auto_set_key=_,
+                key="b",
+                value=[
+                    QsNode(
+                        auto_set_key=_,
+                        key="c",
+                        value="d",
+                    )
+                ],
+            ):
+                pass
+            case _:
+                self.fail("Parsing failed")
 
 
 if __name__ == "__main__":
